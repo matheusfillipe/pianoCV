@@ -152,7 +152,7 @@ lab-key-instances-kaggle-run: ## push and start the private GPU alignment-traini
 
 lab-key-instances-kaggle-output: ## download completed private alignment-model artifacts
 	mkdir -p $(KAGGLE_KEY_ALIGNMENT_OUTPUT_DIR)
-	kaggle kernels output mattflyx/piano-key-instance-alignment -p $(KAGGLE_KEY_ALIGNMENT_OUTPUT_DIR)
+	kaggle kernels output mattflyx/piano-key-instance-alignment -p $(KAGGLE_KEY_ALIGNMENT_OUTPUT_DIR) --force
 
 lab-key-instances-kaggle-evaluate: ## evaluate a downloaded alignment ONNX artifact locally
 	cd tools && uv run python -m kvt.keyalignmenteval

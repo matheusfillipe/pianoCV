@@ -11,11 +11,15 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as functional
+from torchvision.models import MobileNet_V3_Large_Weights
+from torchvision.models.segmentation import lraspp_mobilenet_v3_large
 
 INPUT_SIZE = (320, 240)
-BATCH_SIZE = 24
-EPOCHS = 120
+BATCH_SIZE = 16
+EPOCHS = 60
 SEED = 7
+_MEAN = np.asarray((0.485, 0.456, 0.406), dtype=np.float32)
+_STD = np.asarray((0.229, 0.224, 0.225), dtype=np.float32)
 
 
 def dataset_root() -> Path:
@@ -65,6 +69,7 @@ class KeyDataset(torch.utils.data.Dataset[tuple[torch.Tensor, torch.Tensor]]):
         floating = image.astype(np.float32) / 255.0
         if self.augment:
             floating = self._augment(floating)
+        floating = (floating - _MEAN) / _STD
         stacked = np.stack(
             (*[target / 255.0 for target in binary], coordinate / 65535.0)
         ).astype(np.float32)
@@ -90,49 +95,17 @@ class KeyDataset(torch.utils.data.Dataset[tuple[torch.Tensor, torch.Tensor]]):
         )
 
 
-class Block(nn.Module):
-    def __init__(self, input_channels: int, output_channels: int) -> None:
-        super().__init__()
-        self.layers = nn.Sequential(
-            nn.Conv2d(input_channels, output_channels, 3, padding=1),
-            nn.BatchNorm2d(output_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(output_channels, output_channels, 3, padding=1),
-            nn.BatchNorm2d(output_channels),
-            nn.ReLU(inplace=True),
-        )
-
-    def forward(self, image: torch.Tensor) -> torch.Tensor:
-        return self.layers(image)
-
-
 class AlignmentNet(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.first = Block(3, 32)
-        self.second = Block(32, 64)
-        self.third = Block(64, 128)
-        self.fourth = Block(128, 192)
-        self.up_third = Block(192 + 128, 128)
-        self.up_second = Block(128 + 64, 64)
-        self.up_first = Block(64 + 32, 32)
-        self.head = nn.Conv2d(32, 4, 1)
+        self.model = lraspp_mobilenet_v3_large(
+            weights=None,
+            weights_backbone=MobileNet_V3_Large_Weights.DEFAULT,
+            num_classes=4,
+        )
 
     def forward(self, image: torch.Tensor) -> torch.Tensor:
-        first = self.first(image)
-        second = self.second(functional.max_pool2d(first, 2))
-        third = self.third(functional.max_pool2d(second, 2))
-        fourth = self.fourth(functional.max_pool2d(third, 2))
-        third_up = self.up_third(
-            torch.cat((functional.interpolate(fourth, scale_factor=2, mode="bilinear"), third), 1)
-        )
-        second_up = self.up_second(
-            torch.cat((functional.interpolate(third_up, scale_factor=2, mode="bilinear"), second), 1)
-        )
-        first_up = self.up_first(
-            torch.cat((functional.interpolate(second_up, scale_factor=2, mode="bilinear"), first), 1)
-        )
-        return self.head(first_up)
+        return self.model(image)["out"]
 
 
 def alignment_loss(logits: torch.Tensor, target: torch.Tensor, device: torch.device) -> torch.Tensor:
