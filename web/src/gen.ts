@@ -32,6 +32,7 @@ import {
   SPAN_MIN_Z,
   visibleFraction,
 } from "./keybed3d";
+import { createKeyIdOverlay, type KeyIdSpec } from "./keylabels";
 
 const MODEL_URL = "/models/piano_keys.glb";
 const WIDTH = 640;
@@ -161,6 +162,8 @@ export async function boot(): Promise<void> {
 
   const gltf = await new GLTFLoader().loadAsync(MODEL_URL);
   scene.add(gltf.scene);
+  const keyIds = createKeyIdOverlay();
+  scene.add(keyIds.group);
 
   // a real instrument is a case with a panel butting onto the back of the keys; a floating slab
   // gives the net no way to learn where the keybed actually ends
@@ -223,17 +226,18 @@ export async function boot(): Promise<void> {
   const sweep = document.createElement("button");
   const grid = document.createElement("button");
   const shuffle = document.createElement("button");
+  const ids = document.createElement("button");
   const readout = document.createElement("span");
   record.textContent = "record";
   sweep.textContent = "auto sweep";
   grid.textContent = "render test grid";
   shuffle.textContent = "randomise";
-  styleButton(record);
-  styleButton(sweep);
-  styleButton(grid);
-  styleButton(shuffle);
+  ids.textContent = "key IDs";
+  for (const button of [record, sweep, grid, shuffle, ids]) {
+    styleButton(button);
+  }
   readout.style.color = "#8a8a8a";
-  panel.append(record, sweep, grid, shuffle, readout);
+  panel.append(record, sweep, grid, shuffle, ids, readout);
   document.body.appendChild(panel);
   let random: () => number = Math.random;
   const status = (text: string): void => {
@@ -299,6 +303,8 @@ export async function boot(): Promise<void> {
   const poses = gridPoses();
   let gridIndex = -1;
   let gridSkipped = 0;
+  let selected: KeyIdSpec | null = null;
+  let pointerDown: { x: number; y: number } | null = null;
 
   const between = ([low, high]: number[]): number =>
     low + random() * (high - low);
@@ -399,6 +405,34 @@ export async function boot(): Promise<void> {
     randomise();
     randomiseLens();
   });
+  ids.addEventListener("click", () => {
+    keyIds.group.visible = !keyIds.group.visible;
+    styleButton(ids, keyIds.group.visible);
+    selected = null;
+  });
+  canvas.addEventListener("pointerdown", (event) => {
+    pointerDown = { x: event.clientX, y: event.clientY };
+  });
+  canvas.addEventListener("pointerup", (event) => {
+    if (!pointerDown || !keyIds.group.visible) {
+      pointerDown = null;
+      return;
+    }
+    const distance = Math.hypot(
+      event.clientX - pointerDown.x,
+      event.clientY - pointerDown.y,
+    );
+    pointerDown = null;
+    if (distance > 4) {
+      return;
+    }
+    const box = canvas.getBoundingClientRect();
+    selected = keyIds.pick(
+      camera,
+      ((event.clientX - box.left) / box.width) * 2 - 1,
+      -((event.clientY - box.top) / box.height) * 2 + 1,
+    );
+  });
   sweep.addEventListener("click", () => {
     sweeping = !sweeping;
     controls.enabled = !sweeping;
@@ -461,7 +495,9 @@ export async function boot(): Promise<void> {
       "keybed",
     );
     status(
-      `${Math.round(fraction * 100)}% visible${usable ? "" : ", too little to save"}  saved ${saved}`,
+      `${Math.round(fraction * 100)}% visible${usable ? "" : ", too little to save"}  saved ${saved}${
+        selected ? `  ${selected.label} (${selected.pitch})` : ""
+      }`,
     );
 
     if (gridIndex >= 0) {
