@@ -2,6 +2,7 @@ import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import { type Calibration, type Corners, createCalibration } from "./calibrate";
 import { createDetector, type Detector, INPUT_SIZE } from "./detector";
 import { drawHands, drawModelInput, drawQuad } from "./draw";
+import { drawKeyMasks } from "./keypolygons";
 import { createHandTracker, type HandTracker } from "./hands";
 import type { Point } from "./homography";
 import { createHud, type Hud } from "./hud";
@@ -43,6 +44,7 @@ const TOP_VIEW_ENDS = 1.15;
 // corners that measure outside that were not on the keybed and measure nothing
 const DEPTH_RANGE = [3, 9];
 const FOCAL_RANGE = [0.45, 2];
+const SHOW_KEY_MASKS = new URLSearchParams(location.search).has("keymask");
 
 // when a recording plays in place of the camera, every detection is kept on the window so
 // a lab session can read the pipeline's behaviour over time
@@ -356,6 +358,9 @@ function startLoop(
         lock.onKeybed ? AUTO_COLOR : WEAK_COLOR,
         lock.onKeybed ? "keybed" : "no key pattern",
       );
+      if (SHOW_KEY_MASKS) {
+        drawKeyMasks(ctx, lock.quad, box.w, box.h);
+      }
     }
     if (hud.state.corners) {
       drawQuad(ctx, orientedManual(), box.w, box.h, MANUAL_COLOR, "manual");
