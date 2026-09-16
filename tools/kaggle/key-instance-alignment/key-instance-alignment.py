@@ -14,7 +14,7 @@ from torch.nn import functional as functional
 
 INPUT_SIZE = (320, 240)
 BATCH_SIZE = 24
-EPOCHS = 32
+EPOCHS = 120
 SEED = 7
 
 
