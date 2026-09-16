@@ -4,6 +4,7 @@ MODEL_REPO := mattf/keybed-seg
 
 .DEFAULT_GOAL := help
 .PHONY: help install fix precommit check list-lab-data lab-extract lab-train lab-detect \
+        lab-key-instances-prepare lab-key-instances-archive \
         tools-fix tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
         build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export
@@ -128,6 +129,12 @@ lab-corpus-zip: lab-corpus-bake ## pack data/corpus into data/keybed-corpus.zip 
 
 lab-detect: lab-extract ## evaluate keybed detector on extracted frames, split by fine-tuned vs held out
 	cd tools && uv run python -m kvt.evaluate $(ARGS)
+
+lab-key-instances-prepare: ## make a separate Kaggle-ready per-key dataset from data/key-instances
+	cd tools && uv run python -m kvt.keyinstances $(ARGS)
+
+lab-key-instances-archive: ## build a Kaggle upload zip from the prepared per-key dataset
+	cd tools && uv run python -m kvt.keyinstances --archive $(ARGS)
 
 clean: ## remove local caches and build artifacts
 	rm -rf tools/.ruff_cache tools/.mypy_cache tools/.pytest_cache tools/.coverage tools/.coverage.* tools/.vulture web/dist

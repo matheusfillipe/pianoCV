@@ -3,12 +3,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 
-const ROUTE = /^\/lab\/save\/(?:(synth|grid)\/)?([^/]+)$/;
+const ROUTE = /^\/lab\/save\/(?:(synth|grid|key-instances)\/)?([^/]+)$/;
 const CLIP_ROUTE = /^\/lab\/clip\/([^/?]+)$/;
 const DIRS: Record<string, string> = {
   recordings: "recordings",
   synth: "synth",
   grid: "grid",
+  "key-instances": "key-instances",
 };
 const UNSAFE_NAME = /[^a-zA-Z0-9._-]/g;
 

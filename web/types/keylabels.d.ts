@@ -9,7 +9,9 @@ export interface KeyIdSpec {
 }
 export interface KeyIdOverlay {
     group: Group;
+    setMaskMode(enabled: boolean): void;
     pick(camera: Parameters<Raycaster["setFromCamera"]>[1], x: number, y: number): KeyIdSpec | null;
 }
+export declare function instanceMaskColor(index: number): number;
 export declare function keyIdSpecs(): KeyIdSpec[];
 export declare function createKeyIdOverlay(): KeyIdOverlay;

@@ -38,11 +38,19 @@ export interface KeyIdSpec {
 
 export interface KeyIdOverlay {
   group: Group;
+  setMaskMode(enabled: boolean): void;
   pick(
     camera: Parameters<Raycaster["setFromCamera"]>[1],
     x: number,
     y: number,
   ): KeyIdSpec | null;
+}
+
+export function instanceMaskColor(index: number): number {
+  const red = 32 + (index % 6) * 44;
+  const green = 32 + (Math.floor(index / 6) % 4) * 64;
+  const blue = 32 + Math.floor(index / 24) * 64;
+  return (red << 16) | (green << 8) | blue;
 }
 
 function name(pitch: number): string {
@@ -89,6 +97,9 @@ export function createKeyIdOverlay(): KeyIdOverlay {
   const specs = keyIdSpecs();
   const byUuid = new Map<string, KeyIdSpec>();
   const meshes: Mesh[] = [];
+  const outlines: LineSegments[] = [];
+  const displayMaterials: MeshBasicMaterial[] = [];
+  const maskMaterials: MeshBasicMaterial[] = [];
   for (const [index, spec] of specs.entries()) {
     const front = spec.black ? BLACK_FRONT_X : FRONT_X;
     const width = front - BACK_X;
@@ -97,6 +108,10 @@ export function createKeyIdOverlay(): KeyIdOverlay {
     const gap = spec.black ? BLACK_GAP : WHITE_GAP;
     const color = new Color().setHSL((index * 0.61803398875) % 1, 0.82, 0.58);
     const material = new MeshBasicMaterial({ color });
+    const maskMaterial = new MeshBasicMaterial({
+      color: new Color(instanceMaskColor(index)),
+      toneMapped: false,
+    });
     const geometry = new BoxGeometry(
       width,
       height,
@@ -110,17 +125,30 @@ export function createKeyIdOverlay(): KeyIdOverlay {
     );
     byUuid.set(mesh.uuid, spec);
     meshes.push(mesh);
+    displayMaterials.push(material);
+    maskMaterials.push(maskMaterial);
     group.add(mesh);
     const outline = new LineSegments(
       new EdgesGeometry(geometry),
       new LineBasicMaterial({ color: 0x080808 }),
     );
     outline.position.copy(mesh.position);
+    outlines.push(outline);
     group.add(outline);
   }
   group.visible = false;
   return {
     group,
+    setMaskMode(enabled) {
+      for (const [index, mesh] of meshes.entries()) {
+        mesh.material = enabled
+          ? maskMaterials[index]
+          : displayMaterials[index];
+      }
+      for (const outline of outlines) {
+        outline.visible = !enabled;
+      }
+    },
     pick(camera, x, y) {
       pointer.set(x, y);
       raycaster.setFromCamera(pointer, camera);

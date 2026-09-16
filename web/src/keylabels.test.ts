@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { keyIdSpecs } from "./keylabels";
+import { instanceMaskColor, keyIdSpecs } from "./keylabels";
 
 describe("key ID labels", () => {
   test("covers the source model in pitch order", () => {
@@ -22,5 +22,12 @@ describe("key ID labels", () => {
       expect(key.v1).toBeGreaterThan(0);
       expect(key.v1).toBeLessThanOrEqual(1);
     }
+  });
+
+  test("assigns a unique instance color to every source key", () => {
+    const values = keyIdSpecs().map((_, index) => instanceMaskColor(index));
+    expect(new Set(values).size).toBe(96);
+    expect(values[0]).not.toBe(0);
+    expect(values.at(-1)).not.toBe(0);
   });
 });

@@ -5,8 +5,10 @@ import {
   Color,
   DirectionalLight,
   Group,
+  LinearSRGBColorSpace,
   Mesh,
   MeshStandardMaterial,
+  NoToneMapping,
   PerspectiveCamera,
   PMREMGenerator,
   Scene,
@@ -32,11 +34,16 @@ import {
   SPAN_MIN_Z,
   visibleFraction,
 } from "./keybed3d";
-import { createKeyIdOverlay, type KeyIdSpec } from "./keylabels";
+import {
+  createKeyIdOverlay,
+  instanceMaskColor,
+  type KeyIdSpec,
+  keyIdSpecs,
+} from "./keylabels";
 
 const MODEL_URL = "/models/piano_keys.glb";
-const WIDTH = 640;
-const HEIGHT = 480;
+const WIDTH = queryDimension("width", 640);
+const HEIGHT = queryDimension("height", 480);
 const CAPTURE_INTERVAL_MS = 300;
 // enough of the keybed to be worth a label; below this there is nothing to learn from
 const MIN_VISIBLE_FRACTION = 0.2;
@@ -55,6 +62,7 @@ const GRID_AZIMUTH = [-90, -60, -30, 0, 30, 60, 90];
 const GRID_DISTANCE = [SPAN * 0.5, SPAN * 0.8, SPAN * 1.2];
 const GRID_FOV = 45;
 const GRID_SEED = 7;
+const MAX_BATCH_SAMPLES = 10_000;
 
 interface Pose {
   elevation: number;
@@ -95,11 +103,20 @@ function stamp(): string {
   );
 }
 
+function queryPositiveInteger(name: string, fallback: number): number {
+  const value = Number(new URLSearchParams(window.location.search).get(name));
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
+function queryDimension(name: string, fallback: number): number {
+  return Math.min(queryPositiveInteger(name, fallback), fallback);
+}
+
 async function post(
   name: string,
   body: Blob | string,
   type?: string,
-  directory = "synth",
+  directory = "key-instances",
 ): Promise<void> {
   const response = await fetch(`/lab/save/${directory}/${name}`, {
     method: "POST",
@@ -164,6 +181,13 @@ export async function boot(): Promise<void> {
   scene.add(gltf.scene);
   const keyIds = createKeyIdOverlay();
   scene.add(keyIds.group);
+  const keyInstances = keyIdSpecs().map((key, index) => ({
+    id: index + 1,
+    color: instanceMaskColor(index),
+    pitch: key.pitch,
+    label: key.label,
+    black: key.black,
+  }));
 
   // a real instrument is a case with a panel butting onto the back of the keys; a floating slab
   // gives the net no way to learn where the keybed actually ends
@@ -227,17 +251,19 @@ export async function boot(): Promise<void> {
   const grid = document.createElement("button");
   const shuffle = document.createElement("button");
   const ids = document.createElement("button");
+  const mask = document.createElement("button");
   const readout = document.createElement("span");
   record.textContent = "record";
   sweep.textContent = "auto sweep";
   grid.textContent = "render test grid";
   shuffle.textContent = "randomise";
   ids.textContent = "key IDs";
-  for (const button of [record, sweep, grid, shuffle, ids]) {
+  mask.textContent = "key mask";
+  for (const button of [record, sweep, grid, shuffle, ids, mask]) {
     styleButton(button);
   }
   readout.style.color = "#8a8a8a";
-  panel.append(record, sweep, grid, shuffle, ids, readout);
+  panel.append(record, sweep, grid, shuffle, ids, mask, readout);
   document.body.appendChild(panel);
   let random: () => number = Math.random;
   const status = (text: string): void => {
@@ -305,6 +331,13 @@ export async function boot(): Promise<void> {
   let gridSkipped = 0;
   let selected: KeyIdSpec | null = null;
   let pointerDown: { x: number; y: number } | null = null;
+  let maskPreview = false;
+  const batchSamples = Math.min(
+    queryPositiveInteger("samples", 0),
+    MAX_BATCH_SAMPLES,
+  );
+  const batchSeed = queryPositiveInteger("seed", 7);
+  let queued = 0;
 
   const between = ([low, high]: number[]): number =>
     low + random() * (high - low);
@@ -357,35 +390,89 @@ export async function boot(): Promise<void> {
   if (!stillCtx) {
     throw new Error("2d canvas context unavailable");
   }
+  const maskStill = document.createElement("canvas");
+  maskStill.width = WIDTH;
+  maskStill.height = HEIGHT;
+  const maskCtx = maskStill.getContext("2d");
+  if (!maskCtx) {
+    throw new Error("2d mask context unavailable");
+  }
+
+  const pngBlob = (source: HTMLCanvasElement): Blob => {
+    const url = source.toDataURL("image/png");
+    const binary = atob(url.slice(url.indexOf(",") + 1));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], { type: "image/png" });
+  };
+
+  const renderRgb = (): void => {
+    const idsVisible = keyIds.group.visible;
+    keyIds.group.visible = false;
+    renderer.render(scene, camera);
+    keyIds.group.visible = idsVisible;
+  };
+
+  const renderMask = (): void => {
+    const background = scene.background;
+    const sourceVisible = gltf.scene.visible;
+    const bodyVisible = body.visible;
+    const idsVisible = keyIds.group.visible;
+    const toneMapping = renderer.toneMapping;
+    const outputColorSpace = renderer.outputColorSpace;
+    scene.background = new Color(0);
+    gltf.scene.visible = false;
+    body.visible = false;
+    keyIds.group.visible = true;
+    keyIds.setMaskMode(true);
+    renderer.toneMapping = NoToneMapping;
+    renderer.outputColorSpace = LinearSRGBColorSpace;
+    renderer.render(scene, camera);
+    renderer.outputColorSpace = outputColorSpace;
+    renderer.toneMapping = toneMapping;
+    keyIds.setMaskMode(false);
+    keyIds.group.visible = idsVisible;
+    body.visible = bodyVisible;
+    gltf.scene.visible = sourceVisible;
+    scene.background = background;
+  };
 
   // the frame is copied and encoded synchronously: an async toBlob can race the next render
   // and write a png that does not match the corners saved beside it
   const capture = (corners: Point[], pose?: Pose): void => {
+    renderRgb();
     stillCtx.drawImage(canvas, 0, 0);
-    const url = still.toDataURL("image/png");
-    const binary = atob(url.slice(url.indexOf(",") + 1));
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: "image/png" });
+    const image = pngBlob(still);
+    renderMask();
+    maskCtx.drawImage(canvas, 0, 0);
+    const instanceMask = pngBlob(maskStill);
     {
-      const directory = pose ? "grid" : "synth";
+      const directory = "key-instances";
       const name = pose
-        ? `grid-e${pose.elevation}-a${pose.azimuth}-d${Math.round(pose.distance)}`
-        : `synth-${stamp()}`;
-      post(`${name}.png`, blob, undefined, directory)
+        ? `keyinst-grid-e${pose.elevation}-a${pose.azimuth}-d${Math.round(pose.distance)}`
+        : batchSamples > 0
+          ? `keyinst-batch-${batchSeed}-${stamp()}-${queued}`
+          : `keyinst-${stamp()}`;
+      queued += 1;
+      Promise.all([
+        post(`${name}.png`, image, undefined, directory),
+        post(`${name}-keys.png`, instanceMask, undefined, directory),
+      ])
         .then(() =>
           post(
             `${name}.json`,
             JSON.stringify({
-              kind: "synth",
+              kind: "key-instance-synth",
               startedAt: Date.now(),
               durationMs: 0,
               corners,
               imageWidth: WIDTH,
               imageHeight: HEIGHT,
               mimeType: "image/png",
+              instanceMask: `${name}-keys.png`,
+              instances: keyInstances,
               ...(pose ? { pose } : {}),
             }),
             "application/json",
@@ -406,9 +493,20 @@ export async function boot(): Promise<void> {
     randomiseLens();
   });
   ids.addEventListener("click", () => {
+    maskPreview = false;
+    styleButton(mask, false);
     keyIds.group.visible = !keyIds.group.visible;
     styleButton(ids, keyIds.group.visible);
     selected = null;
+  });
+  mask.addEventListener("click", () => {
+    maskPreview = !maskPreview;
+    styleButton(mask, maskPreview);
+    if (maskPreview) {
+      keyIds.group.visible = false;
+      styleButton(ids, false);
+      selected = null;
+    }
   });
   canvas.addEventListener("pointerdown", (event) => {
     pointerDown = { x: event.clientX, y: event.clientY };
@@ -476,11 +574,26 @@ export async function boot(): Promise<void> {
     }
   });
 
+  if (batchSamples > 0) {
+    random = seeded(batchSeed);
+    randomise();
+    randomiseLens();
+    sweeping = true;
+    recording = true;
+    controls.enabled = false;
+    styleButton(sweep, true);
+    styleButton(record, true);
+  }
+
   const frame = (now: number): void => {
     if (!sweeping) {
       controls.update();
     }
-    renderer.render(scene, camera);
+    if (maskPreview) {
+      renderMask();
+    } else {
+      renderer.render(scene, camera);
+    }
     const corners = projectCorners(camera);
     const fraction = visibleFraction(camera);
     const usable = fraction >= MIN_VISIBLE_FRACTION;
@@ -517,13 +630,26 @@ export async function boot(): Promise<void> {
       requestAnimationFrame(frame);
       return;
     }
-    if (recording && usable && now - lastCapture > CAPTURE_INTERVAL_MS) {
+    if (
+      recording &&
+      !maskPreview &&
+      usable &&
+      (batchSamples === 0 || queued < batchSamples) &&
+      now - lastCapture > CAPTURE_INTERVAL_MS
+    ) {
       lastCapture = now;
       capture(corners);
       randomise();
       if (sweeping) {
         randomiseLens();
       }
+    }
+    if (batchSamples > 0 && queued >= batchSamples) {
+      recording = false;
+      sweeping = false;
+      controls.enabled = true;
+      styleButton(sweep, false);
+      styleButton(record, false);
     }
     if (sweeping && (!usable || now - lastCapture < 1)) {
       placeCamera();
