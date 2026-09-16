@@ -3,11 +3,13 @@ UV := uv run --project tools
 MODEL_REPO := mattf/keybed-seg
 KAGGLE_KEY_INSTANCES_DIR ?= data/key-instances/kaggle-20260916-v2
 KAGGLE_KEY_INSTANCES_VERSION_MESSAGE ?= include per-key target folders
+KAGGLE_KEY_ALIGNMENT_OUTPUT_DIR ?= data/models/kaggle-key-alignment
 
 .DEFAULT_GOAL := help
 .PHONY: help install fix precommit check list-lab-data lab-extract lab-train lab-detect \
         lab-key-instances-prepare lab-key-instances-archive \
         lab-key-instances-kaggle-push lab-key-instances-kaggle-version lab-key-instances-kaggle-run \
+        lab-key-instances-kaggle-output \
         tools-fix tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
         build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export
@@ -147,6 +149,10 @@ lab-key-instances-kaggle-version: ## publish a corrected or newer private Kaggle
 
 lab-key-instances-kaggle-run: ## push and start the private GPU alignment-training notebook
 	kaggle kernels push -p tools/kaggle/key-instance-alignment
+
+lab-key-instances-kaggle-output: ## download completed private alignment-model artifacts
+	mkdir -p $(KAGGLE_KEY_ALIGNMENT_OUTPUT_DIR)
+	kaggle kernels output mattflyx/piano-key-instance-alignment -p $(KAGGLE_KEY_ALIGNMENT_OUTPUT_DIR)
 
 lab-key-instances-kaggle-check: ## syntax-check the Kaggle alignment-training script
 	$(UV) python -m py_compile tools/kaggle/key-instance-alignment/key-instance-alignment.py
