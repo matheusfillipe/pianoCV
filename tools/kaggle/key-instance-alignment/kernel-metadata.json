@@ -1,0 +1,11 @@
+{
+  "id": "mattflyx/piano-key-instance-alignment",
+  "title": "Piano key instance alignment",
+  "code_file": "key-instance-alignment.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": false,
+  "dataset_sources": ["mattflyx/piano-key-instances"]
+}

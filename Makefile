@@ -1,10 +1,13 @@
 BUN := bun --cwd=web
 UV := uv run --project tools
 MODEL_REPO := mattf/keybed-seg
+KAGGLE_KEY_INSTANCES_DIR ?= data/key-instances/kaggle-20260916-v2
+KAGGLE_KEY_INSTANCES_VERSION_MESSAGE ?= include per-key target folders
 
 .DEFAULT_GOAL := help
 .PHONY: help install fix precommit check list-lab-data lab-extract lab-train lab-detect \
         lab-key-instances-prepare lab-key-instances-archive \
+        lab-key-instances-kaggle-push lab-key-instances-kaggle-version lab-key-instances-kaggle-run \
         tools-fix tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
         build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export
@@ -25,7 +28,7 @@ precommit: fix ## hook entry: same as fix
 
 # --- checks (verify, never produce artifacts) ---
 
-check: tools-format-check tools-lint tools-typecheck tools-test web-typecheck web-types web-lint web-test web-build ## run all checks (the pre-commit gate)
+check: tools-format-check tools-lint tools-typecheck tools-test lab-key-instances-kaggle-check web-typecheck web-types web-lint web-test web-build ## run all checks (the pre-commit gate)
 
 quality: check tools-dead-code tools-unused-deps tools-security tools-audit tools-coverage build ## run the full quality gate
 	@echo "quality gate passed"
@@ -135,6 +138,18 @@ lab-key-instances-prepare: ## make a separate Kaggle-ready per-key dataset from 
 
 lab-key-instances-archive: ## build a Kaggle upload zip from the prepared per-key dataset
 	cd tools && uv run python -m kvt.keyinstances --archive $(ARGS)
+
+lab-key-instances-kaggle-push: ## publish prepared data to the private Kaggle dataset
+	kaggle datasets create -p $(KAGGLE_KEY_INSTANCES_DIR) --dir-mode zip
+
+lab-key-instances-kaggle-version: ## publish a corrected or newer private Kaggle dataset version
+	kaggle datasets version -p $(KAGGLE_KEY_INSTANCES_DIR) --dir-mode zip --message "$(KAGGLE_KEY_INSTANCES_VERSION_MESSAGE)"
+
+lab-key-instances-kaggle-run: ## push and start the private GPU alignment-training notebook
+	kaggle kernels push -p tools/kaggle/key-instance-alignment
+
+lab-key-instances-kaggle-check: ## syntax-check the Kaggle alignment-training script
+	$(UV) python -m py_compile tools/kaggle/key-instance-alignment/key-instance-alignment.py
 
 clean: ## remove local caches and build artifacts
 	rm -rf tools/.ruff_cache tools/.mypy_cache tools/.pytest_cache tools/.coverage tools/.coverage.* tools/.vulture web/dist
