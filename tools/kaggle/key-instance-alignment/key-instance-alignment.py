@@ -137,15 +137,24 @@ class AlignmentNet(nn.Module):
 
 def alignment_loss(logits: torch.Tensor, target: torch.Tensor, device: torch.device) -> torch.Tensor:
     visible = target[:, :1]
-    surfaces = functional.binary_cross_entropy_with_logits(logits[:, :2], target[:, :2])
+    visible_loss = functional.binary_cross_entropy_with_logits(
+        logits[:, :1], target[:, :1], pos_weight=torch.tensor([3.0], device=device)
+    )
+    black_loss = functional.binary_cross_entropy_with_logits(
+        logits[:, 1:2], target[:, 1:2], pos_weight=torch.tensor([8.0], device=device)
+    )
+    visible_probability = torch.sigmoid(logits[:, :1])
+    dice = 1 - (2 * (visible_probability * visible).sum() + 1) / (
+        visible_probability.sum() + visible.sum() + 1
+    )
     edge_weight = torch.tensor([5.0], device=device)
     edges = functional.binary_cross_entropy_with_logits(
         logits[:, 2:3], target[:, 2:3], pos_weight=edge_weight
     )
     coordinate = functional.smooth_l1_loss(
-        torch.sigmoid(logits[:, 3:4]) * visible, target[:, 3:4] * visible
+        torch.sigmoid(logits[:, 3:4])[visible > 0.5], target[:, 3:4][visible > 0.5]
     )
-    return surfaces + edges + 3 * coordinate
+    return visible_loss + black_loss + dice + edges + 3 * coordinate
 
 
 def validation_score(
@@ -214,6 +223,7 @@ def main() -> None:
         output_names=["alignment"],
         dynamic_axes={"image": {0: "batch"}, "alignment": {0: "batch"}},
         opset_version=17,
+        dynamo=False,
     )
     print(f"best visible IoU: {best:.4f}")
 
