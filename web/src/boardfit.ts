@@ -10,11 +10,6 @@ const MIN_SEPARATION = 0.4;
 const MIN_AGREEMENT = 0.62;
 const MIN_WHITES = 12;
 const MAX_WHITES = 56;
-const DEFAULT_BLACK_DEPTH = 0.62;
-const MIN_BLACK_DEPTH = 0.35;
-const MAX_BLACK_DEPTH = 0.82;
-const DEPTH_STEP = 0.02;
-const DEPTH_PROBE = 0.035;
 const OCTAVE_STEPS = 100;
 const OCTAVE_WIDE = 7 * OCTAVE_STEPS;
 const UNIT_SQUARE: Point[] = [
@@ -180,7 +175,6 @@ function rangeFor(whites: number, phase: number): Board | null {
       highest,
       origin: keyUnits(lowest).from,
       span: whites,
-      blackDepth: DEFAULT_BLACK_DEPTH,
     };
     if (
       best === null ||
@@ -237,49 +231,6 @@ function refine(stripe: Stripe, coarse: Shape): Shape {
   return best;
 }
 
-function fitBlackDepth(
-  pixels: ImageData,
-  homography: number[],
-  board: Board,
-): number {
-  const blackCenters = Array.from(
-    { length: board.highest - board.lowest + 1 },
-    (_, index) => board.lowest + index,
-  )
-    .filter(isBlack)
-    .map((pitch) => {
-      const key = keyUnits(pitch);
-      return (key.from + key.to - 2 * board.origin) / (2 * board.span);
-    })
-    .filter((u) => u > 0.04 && u < 0.96);
-  let best = { depth: DEFAULT_BLACK_DEPTH, contrast: -Infinity };
-  for (
-    let depth = MIN_BLACK_DEPTH;
-    depth <= MAX_BLACK_DEPTH;
-    depth += DEPTH_STEP
-  ) {
-    let contrast = 0;
-    let known = 0;
-    for (const u of blackCenters) {
-      const before = brightness(
-        pixels,
-        applyHomography(homography, u, depth - DEPTH_PROBE),
-      );
-      const after = brightness(
-        pixels,
-        applyHomography(homography, u, depth + DEPTH_PROBE),
-      );
-      if (before === null || after === null) continue;
-      contrast += after - before;
-      known += 1;
-    }
-    if (known >= 6 && contrast / known > best.contrast) {
-      best = { depth, contrast: contrast / known };
-    }
-  }
-  return best.contrast >= 18 ? best.depth : DEFAULT_BLACK_DEPTH;
-}
-
 export function fitBoard(
   pixels: ImageData,
   quad: readonly Point[],
@@ -310,13 +261,5 @@ export function fitBoard(
       keyUnits(board.lowest).from +
       (best.shape.phase - Math.round(best.shape.phase)),
     span: best.shape.whites,
-    blackDepth: fitBlackDepth(pixels, homography, {
-      ...board,
-      origin:
-        keyUnits(board.lowest).from +
-        (best.shape.phase - Math.round(best.shape.phase)),
-      span: best.shape.whites,
-      blackDepth: DEFAULT_BLACK_DEPTH,
-    }),
   };
 }

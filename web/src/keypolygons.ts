@@ -1,6 +1,5 @@
-import type { Point } from "./homography";
+import { applyHomography, findHomography, type Point } from "./homography";
 import { isBlack, keyUnits } from "./keys";
-import { keybedDepth, projectSpace, solvePose } from "./pose";
 
 export interface KeyPolygon {
   pitch: number;
@@ -13,35 +12,36 @@ export interface Board {
   highest: number;
   origin: number;
   span: number;
-  blackDepth: number;
 }
 
-const BLACK_KEY_HEIGHT = 0.43;
+const BLACK_DEPTH = 0.67;
+const UNIT_SQUARE: Point[] = [
+  { x: 0, y: 0 },
+  { x: 1, y: 0 },
+  { x: 1, y: 1 },
+  { x: 0, y: 1 },
+];
 
 export function keyPolygons(
   quad: readonly Point[],
   board: Board,
-  imageWidth = Math.max(...quad.map((point) => point.x)),
-  imageHeight = Math.max(...quad.map((point) => point.y)),
 ): KeyPolygon[] {
-  const pose = solvePose([...quad], imageWidth, imageHeight, board.span);
+  const homography = findHomography(UNIT_SQUARE, quad);
   const polygons: KeyPolygon[] = [];
   for (let pitch = board.lowest; pitch <= board.highest; pitch += 1) {
     const units = keyUnits(pitch);
-    const u0 = Math.max(0, units.from - board.origin);
-    const u1 = Math.min(board.span, units.to - board.origin);
+    const u0 = Math.max(0, (units.from - board.origin) / board.span);
+    const u1 = Math.min(1, (units.to - board.origin) / board.span);
     if (u1 <= u0) continue;
-    const black = isBlack(pitch);
-    const v1 = (black ? board.blackDepth : 1) * keybedDepth();
-    const elevation = black ? BLACK_KEY_HEIGHT : 0;
+    const v1 = isBlack(pitch) ? BLACK_DEPTH : 1;
     polygons.push({
       pitch,
-      black,
+      black: isBlack(pitch),
       points: [
-        projectSpace(pose, u0, 0, elevation, imageWidth, imageHeight),
-        projectSpace(pose, u1, 0, elevation, imageWidth, imageHeight),
-        projectSpace(pose, u1, v1, elevation, imageWidth, imageHeight),
-        projectSpace(pose, u0, v1, elevation, imageWidth, imageHeight),
+        applyHomography(homography, u0, 0),
+        applyHomography(homography, u1, 0),
+        applyHomography(homography, u1, v1),
+        applyHomography(homography, u0, v1),
       ],
     });
   }
@@ -59,7 +59,7 @@ export function drawKeyMasks(
     x: point.x * width,
     y: point.y * height,
   }));
-  for (const key of keyPolygons(scaled, board, width, height)) {
+  for (const key of keyPolygons(scaled, board)) {
     const [first, ...rest] = key.points;
     if (!first) {
       continue;
