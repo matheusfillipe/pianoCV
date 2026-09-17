@@ -60,7 +60,7 @@ const BACKDROPS: BackdropKind[] = ["clutter", "noise", "gradient"];
 const GRID_ELEVATION = [10, 25, 40, 55, 70];
 const GRID_AZIMUTH = [-90, -60, -30, 0, 30, 60, 90];
 const GRID_DISTANCE = [SPAN * 0.5, SPAN * 0.8, SPAN * 1.2];
-const GRID_FOV = 45;
+const GRID_FOV = [25, 45, 70];
 const GRID_SEED = 7;
 const MAX_BATCH_SAMPLES = 10_000;
 
@@ -68,6 +68,7 @@ interface Pose {
   elevation: number;
   azimuth: number;
   distance: number;
+  fov: number;
 }
 
 function gridPoses(): Pose[] {
@@ -75,7 +76,9 @@ function gridPoses(): Pose[] {
   for (const elevation of GRID_ELEVATION) {
     for (const azimuth of GRID_AZIMUTH) {
       for (const distance of GRID_DISTANCE) {
-        poses.push({ elevation, azimuth, distance });
+        for (const fov of GRID_FOV) {
+          poses.push({ elevation, azimuth, distance, fov });
+        }
       }
     }
   }
@@ -362,6 +365,7 @@ export async function boot(): Promise<void> {
       elevation: between(SWEEP_ELEVATION),
       azimuth: between(SWEEP_AZIMUTH),
       distance: between(SWEEP_DISTANCE),
+      fov: camera.fov,
     });
     camera.rotateZ((between(SWEEP_ROLL) * Math.PI) / 180);
     // aim a little off centre so the keybed is not always dead centre of frame
@@ -371,7 +375,7 @@ export async function boot(): Promise<void> {
 
   const placeGrid = (): void => {
     aim(poses[gridIndex]);
-    camera.fov = GRID_FOV;
+    camera.fov = poses[gridIndex].fov;
     camera.updateProjectionMatrix();
     randomise();
   };
@@ -451,7 +455,7 @@ export async function boot(): Promise<void> {
     {
       const directory = "key-instances";
       const name = pose
-        ? `keyinst-grid-e${pose.elevation}-a${pose.azimuth}-d${Math.round(pose.distance)}`
+        ? `keyinst-grid-e${pose.elevation}-a${pose.azimuth}-d${Math.round(pose.distance)}-f${pose.fov}`
         : batchSamples > 0
           ? `keyinst-batch-${batchSeed}-${stamp()}-${queued}`
           : `keyinst-${stamp()}`;
@@ -468,6 +472,10 @@ export async function boot(): Promise<void> {
               startedAt: Date.now(),
               durationMs: 0,
               corners,
+              camera: {
+                fov: camera.fov,
+                distance: camera.position.distanceTo(KEYBED_CENTRE),
+              },
               imageWidth: WIDTH,
               imageHeight: HEIGHT,
               mimeType: "image/png",

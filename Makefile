@@ -10,7 +10,8 @@ KAGGLE_KEY_ALIGNMENT_OUTPUT_DIR ?= data/models/kaggle-key-alignment
         lab-key-instances-prepare lab-key-instances-archive \
         lab-key-instances-kaggle-push lab-key-instances-kaggle-version lab-key-instances-kaggle-run \
         lab-key-instances-kaggle-output lab-key-instances-kaggle-evaluate \
-        tools-fix tools-format-check tools-lint tools-typecheck \
+        lab-calibration-eval \
+        tools-fix tools-lock tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
         build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export
 
@@ -37,6 +38,9 @@ quality: check tools-dead-code tools-unused-deps tools-security tools-audit tool
 
 tools-fix: ## autofix python formatting and lint (ruff)
 	cd tools && uv run ruff format src tests && uv run ruff check --fix src tests
+
+tools-lock: ## refresh the Python dependency lock after metadata changes
+	uv lock --project tools
 
 tools-format-check: ## check python formatting (ruff format)
 	cd tools && uv run ruff format --check src tests
@@ -123,6 +127,9 @@ lab-jitter: ## measure how much the detection moves on static recordings
 
 lab-gridtest: ## score the detector per pose on the deterministic render grid (data/grid)
 	cd tools && uv run python -m kvt.gridtest $(ARGS)
+
+lab-calibration-eval: ## run a bounded headless browser calibration evaluation (data/evaluations)
+	cd web && bun eval-runner.mjs
 
 lab-corpus-bake: ## bake data/synth down to the net's input size (data/corpus)
 	cd tools && uv run python -m kvt.bake

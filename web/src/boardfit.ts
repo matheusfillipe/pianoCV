@@ -23,10 +23,9 @@ const UNIT_SQUARE: Point[] = [
   { x: 1, y: 1 },
   { x: 0, y: 1 },
 ];
-const WHITE_PITCHES = Array.from(
-  { length: 88 },
-  (_, index) => index + 21,
-).filter((pitch) => !isBlack(pitch));
+const WHITE_PITCHES = Array.from({ length: 128 }, (_, index) => index).filter(
+  (pitch) => !isBlack(pitch),
+);
 
 type Stripe = {
   readonly seen: readonly (boolean | null)[];
@@ -174,7 +173,11 @@ function rangeFor(whites: number, phase: number): Board | null {
   let best: Board | null = null;
   for (const [index, lowest] of WHITE_PITCHES.entries()) {
     const highest = WHITE_PITCHES[index + whites - 1];
-    if (highest === undefined || keyUnits(lowest).from % 7 !== phase) continue;
+    // Low pitches can have negative coordinates. Normalize the remainder
+    // before comparing it with the stripe phase; JavaScript's `%` keeps the
+    // sign of the dividend.
+    const keyPhase = ((keyUnits(lowest).from % 7) + 7) % 7;
+    if (highest === undefined || keyPhase !== phase) continue;
     const candidate = {
       lowest,
       highest,

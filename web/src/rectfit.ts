@@ -7,12 +7,7 @@
 // thin end. Port of tools/src/kvt/rectfit.py, measured there on the pose grid and the clips.
 
 import { findHomography, type Point } from "./homography";
-import {
-  cameraFocalFraction,
-  canonicalQuad,
-  keybedDepth,
-  WHITE_KEY_COUNT,
-} from "./pose";
+import { canonicalQuad, keybedDepth, WHITE_KEY_COUNT } from "./pose";
 import {
   bilinear,
   blur,

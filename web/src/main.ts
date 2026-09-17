@@ -1,5 +1,5 @@
 import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
-import { fitBoard } from "./boardfit";
+import { calibrateBoard } from "./boardgeometry";
 import { type Calibration, type Corners, createCalibration } from "./calibrate";
 import { createDetector, type Detector, INPUT_SIZE } from "./detector";
 import { drawHands, drawModelInput, drawQuad } from "./draw";
@@ -10,16 +10,7 @@ import { type Board, drawKeyMasks } from "./keypolygons";
 import { createLab } from "./lab";
 import { lockKeybed } from "./lock";
 import { depthInKeyWidths, measureCorners } from "./measure";
-import { facing } from "./orient";
-import {
-  cameraFocalFraction,
-  canonicalQuad,
-  setCameraFocal,
-  setKeybedDepth,
-  solvePose,
-} from "./pose";
-import { checkQuad } from "./quad";
-import { estimateFocalFraction, keybedDepthFromQuad } from "./rectfit";
+import { canonicalQuad, setCameraFocal, setKeybedDepth } from "./pose";
 import { createSteady } from "./steady";
 import { viteAssets } from "./viteassets";
 
@@ -30,21 +21,8 @@ const WEAK_COLOR = "#f87171";
 const MODEL_VIEW_PX = 216;
 // a couple of rejected frames is noise; a run of them means the keybed really is gone
 const MISSES_BEFORE_CLEAR = 4;
-// measured over every labelled frame: a quad that is really a perspective view of the keybed
-// solves with residual under 0.32; a broken one scores 2.0 or more; a well shaped quad in the
-// wrong place lands between, and this catches the worse half of those too
-const MAX_POSE_RESIDUAL = 1.0;
-// the mask inside a real keybed's box averages near 1; a box drawn over a guess averages
-// far less, and a guess is not shown at all
-const MIN_CONFIDENCE = 0.6;
 const DEPTH_KEY = "kvt.keybedDepthUnits.v2";
 const FOCAL_KEY = "kvt.cameraFocalFraction.v2";
-// ends within this ratio of each other are a view from above; further apart is oblique
-const TOP_VIEW_ENDS = 1.15;
-// a keybed is 3 to 9 key widths deep and a camera lens 0.45 to 2 frame widths of focal;
-// corners that measure outside that were not on the keybed and measure nothing
-const DEPTH_RANGE = [3, 9];
-const FOCAL_RANGE = [0.45, 2];
 const SHOW_KEY_MASKS = new URLSearchParams(location.search).has("keymask");
 
 // when a recording plays in place of the camera, every detection is kept on the window so
@@ -170,7 +148,17 @@ function startLoop(
   let inFlight = false;
   let lastDetectAt = -Infinity;
   let board: Board | null = null;
+  let boardQuad: Point[] | null = null;
+  let boardProposal: Point[] | null = null;
   let lastBoardReadAt = -Infinity;
+  let lastDetectionStill = false;
+
+  const clearBoard = (): void => {
+    board = null;
+    boardQuad = null;
+    boardProposal = null;
+    lastBoardReadAt = -Infinity;
+  };
 
   const detect = (now: number): void => {
     if (!detector || inFlight || video.videoWidth === 0) {
@@ -192,7 +180,8 @@ function startLoop(
             note: "no keybed",
           });
           lock = null;
-          board = null;
+          clearBoard();
+          lastDetectionStill = false;
           steady.reset();
           hud.status("detect", `${detection.latencyMs.toFixed(1)} ms`);
           hud.status(
@@ -206,6 +195,7 @@ function startLoop(
           height: video.videoHeight,
         });
         if (!held.held) {
+          lastDetectionStill = false;
           labLog({
             t: performance.now(),
             ms: detection.latencyMs,
@@ -218,7 +208,8 @@ function startLoop(
           misses += 1;
           if (misses >= MISSES_BEFORE_CLEAR) {
             lock = null;
-            board = null;
+            clearBoard();
+            lastDetectionStill = false;
             steady.reset();
           }
           hud.status("detect", `${detection.latencyMs.toFixed(1)} ms`);
@@ -226,12 +217,23 @@ function startLoop(
           return;
         }
         const framed = held.quad;
+        const proposal = boardProposal;
+        if (
+          proposal &&
+          framed.some(
+            (p, i) =>
+              Math.hypot(p.x - proposal[i].x, p.y - proposal[i].y) > 0.04,
+          )
+        ) {
+          clearBoard();
+        }
         const facts = {
           quad: held.inputQuad,
           margin: held.margin,
           onKeybed: true,
         };
         misses = 0;
+        lastDetectionStill = detection.still;
         lock = {
           quad: steady.accept(framed, detection.still),
           inputQuad: facts.quad,
@@ -265,6 +267,7 @@ function startLoop(
         );
       })
       .catch((err: unknown) => {
+        lastDetectionStill = false;
         hud.status("model", errorMessage(err));
       })
       .finally(() => {
@@ -272,7 +275,11 @@ function startLoop(
       });
   };
 
-  hud.onRedetect(() => detect(performance.now()));
+  hud.onRedetect(() => {
+    clearBoard();
+    lastDetectionStill = false;
+    detect(performance.now());
+  });
   hud.onAdopt(() => {
     if (lock) {
       calibration.setCorners(lock.quad);
@@ -319,6 +326,8 @@ function startLoop(
     if (measured.kind === "depth") {
       setKeybedDepth(measured.units);
       remember(DEPTH_KEY, measured.units);
+      clearBoard();
+      lastDetectionStill = false;
       hud.status(
         "keybed",
         `shape measured: ${depthInKeyWidths(measured.units).toFixed(2)} key widths per depth`,
@@ -327,6 +336,8 @@ function startLoop(
     }
     setCameraFocal(measured.fraction);
     remember(FOCAL_KEY, measured.fraction);
+    clearBoard();
+    lastDetectionStill = false;
     hud.status(
       "keybed",
       `lens measured: focal ${measured.fraction.toFixed(2)} of the frame width`,
@@ -352,16 +363,28 @@ function startLoop(
     const box = videoBox(video, canvas);
     ctx.drawImage(video, box.x, box.y, box.w, box.h);
 
-    if (lock && board === null && now - lastBoardReadAt > 1500) {
+    if (
+      lock &&
+      board === null &&
+      lastDetectionStill &&
+      now - lastBoardReadAt > 1500
+    ) {
       lastBoardReadAt = now;
       const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      board = fitBoard(
+      const fitted = calibrateBoard(
         image,
         lock.quad.map((point) => ({
           x: box.x + point.x * box.w,
           y: box.y + point.y * box.h,
         })),
       );
+      board = fitted?.board ?? null;
+      boardProposal = fitted ? lock.quad.map((point) => ({ ...point })) : null;
+      boardQuad =
+        fitted?.quad.map((point) => ({
+          x: (point.x - box.x) / box.w,
+          y: (point.y - box.y) / box.h,
+        })) ?? null;
       hud.status(
         "keys",
         board
@@ -375,14 +398,14 @@ function startLoop(
     if (lock) {
       drawQuad(
         ctx,
-        lock.quad,
+        board && boardQuad ? boardQuad : lock.quad,
         box.w,
         box.h,
         lock.onKeybed ? AUTO_COLOR : WEAK_COLOR,
         lock.onKeybed ? "keybed" : "no key pattern",
       );
-      if (SHOW_KEY_MASKS && board) {
-        drawKeyMasks(ctx, lock.quad, board, box.w, box.h);
+      if (SHOW_KEY_MASKS && board && boardQuad) {
+        drawKeyMasks(ctx, boardQuad, board, box.w, box.h);
       }
     }
     if (hud.state.corners) {
