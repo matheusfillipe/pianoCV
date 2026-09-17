@@ -16,13 +16,16 @@ describe("keyPolygons", () => {
         highest: 108,
         origin: keyUnits(21).from,
         span: keyUnits(108).to - keyUnits(21).from,
+        blackDepth: 0.62,
       },
     );
 
     expect(keys).toHaveLength(88);
     expect(keys[0]).toMatchObject({ pitch: 21, black: false });
     expect(keys[87]).toMatchObject({ pitch: 108, black: false });
-    expect(keys[0]?.points[0]).toEqual({ x: 0, y: 0 });
-    expect(keys[87]?.points[2]).toEqual({ x: 1, y: 1 });
+    expect(keys[0]?.points[0]?.x).toBeCloseTo(0);
+    expect(keys[0]?.points[0]?.y).toBeCloseTo(0);
+    expect(keys[87]?.points[2]?.x).toBeCloseTo(1);
+    expect(keys[87]?.points[2]?.y).toBeCloseTo(1);
   });
 });

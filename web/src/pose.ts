@@ -42,9 +42,11 @@ export function keybedDepth(): number {
 // the camera's focal as a fraction of the frame width, a webcam's 65 degree lens until the
 // user measures it from an oblique view, where the two vanishing points fix it
 let cameraFocal = 0.75;
+let hasMeasuredFocal = false;
 
 export function setCameraFocal(fraction: number): void {
   cameraFocal = fraction;
+  hasMeasuredFocal = true;
 }
 
 export function cameraFocalFraction(): number {
@@ -54,11 +56,11 @@ export function cameraFocalFraction(): number {
 /** The keybed as the fit and the pose both see it, so a depth the user measures
  * moves them together. Corner 0 to 1 spans the keys and 1 to 2 the depth, with
  * the player at the near edge. */
-export function worldCorners(): Point[] {
+export function worldCorners(widthInKeys = WHITE_KEY_COUNT): Point[] {
   return [
     { x: 0, y: 0 },
-    { x: WHITE_KEY_COUNT, y: 0 },
-    { x: WHITE_KEY_COUNT, y: depthUnits },
+    { x: widthInKeys, y: 0 },
+    { x: widthInKeys, y: depthUnits },
     { x: 0, y: depthUnits },
   ];
 }
@@ -166,8 +168,12 @@ export function estimateFocal(
   imageCorners: Point[],
   width: number,
   height: number,
+  widthInKeys = WHITE_KEY_COUNT,
 ): number {
-  const h = findHomography(worldCorners(), canonicalQuad(imageCorners));
+  const h = findHomography(
+    worldCorners(widthInKeys),
+    canonicalQuad(imageCorners),
+  );
   const lo = 0.3 * width;
   const hi = 3 * width;
   const residual = (f: number): number => {
@@ -193,9 +199,15 @@ export function solvePose(
   imageCorners: Point[],
   width: number,
   height: number,
+  widthInKeys = WHITE_KEY_COUNT,
 ): PlanePose {
-  const h = findHomography(worldCorners(), canonicalQuad(imageCorners));
-  const focal = estimateFocal(imageCorners, width, height);
+  const h = findHomography(
+    worldCorners(widthInKeys),
+    canonicalQuad(imageCorners),
+  );
+  const focal = hasMeasuredFocal
+    ? cameraFocal * width
+    : estimateFocal(imageCorners, width, height, widthInKeys);
   const b = inverseCalibrationHomography(focal, width, height, h);
   const scale = norm(column(b, 0));
   const r1 = [b[0][0] / scale, b[1][0] / scale, b[2][0] / scale];
@@ -214,7 +226,7 @@ export function solvePose(
       b[1][2] * metricScale,
       b[2][2] * metricScale,
     ],
-    worldWidthMm: WHITE_KEY_COUNT * WHITE_KEY_MM,
+    worldWidthMm: widthInKeys * WHITE_KEY_MM,
     residual: poseResidual(b),
   };
 }
