@@ -364,7 +364,9 @@ function startLoop(
       );
       hud.status(
         "keys",
-        board ? `${board.lowest} to ${board.highest}` : "reading black keys",
+        board
+          ? `${board.lowest} to ${board.highest}, black depth ${board.blackDepth.toFixed(2)}`
+          : "reading black keys",
       );
     }
 

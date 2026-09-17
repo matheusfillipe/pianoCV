@@ -10,6 +10,11 @@ const MIN_SEPARATION = 0.4;
 const MIN_AGREEMENT = 0.62;
 const MIN_WHITES = 12;
 const MAX_WHITES = 56;
+const DEFAULT_BLACK_DEPTH = 0.62;
+const MIN_BLACK_DEPTH = 0.32;
+const MAX_BLACK_DEPTH = 0.82;
+const BLACK_DEPTH_STEP = 0.01;
+const BLACK_EDGE_PROBE = 0.025;
 const OCTAVE_STEPS = 100;
 const OCTAVE_WIDE = 7 * OCTAVE_STEPS;
 const UNIT_SQUARE: Point[] = [
@@ -175,6 +180,7 @@ function rangeFor(whites: number, phase: number): Board | null {
       highest,
       origin: keyUnits(lowest).from,
       span: whites,
+      blackDepth: DEFAULT_BLACK_DEPTH,
     };
     if (
       best === null ||
@@ -231,6 +237,58 @@ function refine(stripe: Stripe, coarse: Shape): Shape {
   return best;
 }
 
+function median(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] ?? null;
+}
+
+function fitBlackDepth(
+  pixels: ImageData,
+  homography: number[],
+  board: Board,
+): number {
+  const centres = Array.from(
+    { length: board.highest - board.lowest + 1 },
+    (_, index) => board.lowest + index,
+  )
+    .filter(isBlack)
+    .flatMap((pitch) => {
+      const key = keyUnits(pitch);
+      const middle = (key.from + key.to) / 2;
+      const half = (key.to - key.from) * 0.18;
+      return [middle - half, middle, middle + half];
+    })
+    .map((unit) => (unit - board.origin) / board.span)
+    .filter((u) => u > 0.04 && u < 0.96);
+  let bestDepth = DEFAULT_BLACK_DEPTH;
+  let bestContrast = -Infinity;
+  for (
+    let depth = MIN_BLACK_DEPTH;
+    depth <= MAX_BLACK_DEPTH;
+    depth += BLACK_DEPTH_STEP
+  ) {
+    const contrasts: number[] = [];
+    for (const u of centres) {
+      const before = brightness(
+        pixels,
+        applyHomography(homography, u, depth - BLACK_EDGE_PROBE),
+      );
+      const after = brightness(
+        pixels,
+        applyHomography(homography, u, depth + BLACK_EDGE_PROBE),
+      );
+      if (before !== null && after !== null) contrasts.push(after - before);
+    }
+    const contrast = median(contrasts);
+    if (contrast !== null && contrast > bestContrast) {
+      bestContrast = contrast;
+      bestDepth = depth;
+    }
+  }
+  return bestContrast >= 12 ? bestDepth : DEFAULT_BLACK_DEPTH;
+}
+
 export function fitBoard(
   pixels: ImageData,
   quad: readonly Point[],
@@ -255,11 +313,14 @@ export function fitBoard(
     Math.round(best.coarse.phase),
   );
   if (board === null) return null;
-  return {
+  const origin =
+    keyUnits(board.lowest).from +
+    (best.shape.phase - Math.round(best.shape.phase));
+  const fitted = {
     ...board,
-    origin:
-      keyUnits(board.lowest).from +
-      (best.shape.phase - Math.round(best.shape.phase)),
+    origin,
     span: best.shape.whites,
+    blackDepth: DEFAULT_BLACK_DEPTH,
   };
+  return { ...fitted, blackDepth: fitBlackDepth(pixels, homography, fitted) };
 }

@@ -16,6 +16,7 @@ describe("keyPolygons", () => {
         highest: 108,
         origin: keyUnits(21).from,
         span: keyUnits(108).to - keyUnits(21).from,
+        blackDepth: 0.62,
       },
     );
 

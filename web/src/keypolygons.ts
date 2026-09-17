@@ -12,9 +12,9 @@ export interface Board {
   highest: number;
   origin: number;
   span: number;
+  blackDepth: number;
 }
 
-const BLACK_DEPTH = 0.67;
 const UNIT_SQUARE: Point[] = [
   { x: 0, y: 0 },
   { x: 1, y: 0 },
@@ -33,7 +33,7 @@ export function keyPolygons(
     const u0 = Math.max(0, (units.from - board.origin) / board.span);
     const u1 = Math.min(1, (units.to - board.origin) / board.span);
     if (u1 <= u0) continue;
-    const v1 = isBlack(pitch) ? BLACK_DEPTH : 1;
+    const v1 = isBlack(pitch) ? board.blackDepth : 1;
     polygons.push({
       pitch,
       black: isBlack(pitch),
