@@ -30,8 +30,9 @@ export function keyPolygons(
   const polygons: KeyPolygon[] = [];
   for (let pitch = board.lowest; pitch <= board.highest; pitch += 1) {
     const units = keyUnits(pitch);
-    const u0 = (units.from - board.origin) / board.span;
-    const u1 = (units.to - board.origin) / board.span;
+    const u0 = Math.max(0, (units.from - board.origin) / board.span);
+    const u1 = Math.min(1, (units.to - board.origin) / board.span);
+    if (u1 <= u0) continue;
     const v1 = isBlack(pitch) ? BLACK_DEPTH : 1;
     polygons.push({
       pitch,
