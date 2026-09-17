@@ -7,12 +7,14 @@ export interface KeyPolygon {
   points: Point[];
 }
 
-const LOW_PITCH = 21;
-const HIGH_PITCH = 108;
+export interface Board {
+  lowest: number;
+  highest: number;
+  origin: number;
+  span: number;
+}
+
 const BLACK_DEPTH = 0.67;
-const LOW_UNITS = keyUnits(LOW_PITCH).from;
-const HIGH_UNITS = keyUnits(HIGH_PITCH).to;
-const SPAN = HIGH_UNITS - LOW_UNITS;
 const UNIT_SQUARE: Point[] = [
   { x: 0, y: 0 },
   { x: 1, y: 0 },
@@ -20,13 +22,16 @@ const UNIT_SQUARE: Point[] = [
   { x: 0, y: 1 },
 ];
 
-export function keyPolygons(quad: readonly Point[]): KeyPolygon[] {
+export function keyPolygons(
+  quad: readonly Point[],
+  board: Board,
+): KeyPolygon[] {
   const homography = findHomography(UNIT_SQUARE, quad);
   const polygons: KeyPolygon[] = [];
-  for (let pitch = LOW_PITCH; pitch <= HIGH_PITCH; pitch += 1) {
+  for (let pitch = board.lowest; pitch <= board.highest; pitch += 1) {
     const units = keyUnits(pitch);
-    const u0 = (units.from - LOW_UNITS) / SPAN;
-    const u1 = (units.to - LOW_UNITS) / SPAN;
+    const u0 = (units.from - board.origin) / board.span;
+    const u1 = (units.to - board.origin) / board.span;
     const v1 = isBlack(pitch) ? BLACK_DEPTH : 1;
     polygons.push({
       pitch,
@@ -45,11 +50,15 @@ export function keyPolygons(quad: readonly Point[]): KeyPolygon[] {
 export function drawKeyMasks(
   ctx: CanvasRenderingContext2D,
   quad: readonly Point[],
+  board: Board,
   width: number,
   height: number,
 ): void {
-  const scaled = quad.map((point) => ({ x: point.x * width, y: point.y * height }));
-  for (const key of keyPolygons(scaled)) {
+  const scaled = quad.map((point) => ({
+    x: point.x * width,
+    y: point.y * height,
+  }));
+  for (const key of keyPolygons(scaled, board)) {
     const [first, ...rest] = key.points;
     if (!first) {
       continue;
@@ -60,7 +69,9 @@ export function drawKeyMasks(
       ctx.lineTo(point.x, point.y);
     }
     ctx.closePath();
-    ctx.fillStyle = key.black ? "rgba(236,72,153,0.48)" : "rgba(56,189,248,0.22)";
+    ctx.fillStyle = key.black
+      ? "rgba(236,72,153,0.48)"
+      : "rgba(56,189,248,0.22)";
     ctx.fill();
     ctx.strokeStyle = "rgba(255,255,255,0.46)";
     ctx.lineWidth = 1;

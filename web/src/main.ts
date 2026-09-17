@@ -1,11 +1,12 @@
 import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
+import { fitBoard } from "./boardfit";
 import { type Calibration, type Corners, createCalibration } from "./calibrate";
 import { createDetector, type Detector, INPUT_SIZE } from "./detector";
 import { drawHands, drawModelInput, drawQuad } from "./draw";
-import { drawKeyMasks } from "./keypolygons";
 import { createHandTracker, type HandTracker } from "./hands";
 import type { Point } from "./homography";
 import { createHud, type Hud } from "./hud";
+import { type Board, drawKeyMasks } from "./keypolygons";
 import { createLab } from "./lab";
 import { lockKeybed } from "./lock";
 import { depthInKeyWidths, measureCorners } from "./measure";
@@ -168,6 +169,8 @@ function startLoop(
   let lastVideoTime = -1;
   let inFlight = false;
   let lastDetectAt = -Infinity;
+  let board: Board | null = null;
+  let lastBoardReadAt = -Infinity;
 
   const detect = (now: number): void => {
     if (!detector || inFlight || video.videoWidth === 0) {
@@ -189,6 +192,7 @@ function startLoop(
             note: "no keybed",
           });
           lock = null;
+          board = null;
           steady.reset();
           hud.status("detect", `${detection.latencyMs.toFixed(1)} ms`);
           hud.status(
@@ -214,6 +218,7 @@ function startLoop(
           misses += 1;
           if (misses >= MISSES_BEFORE_CLEAR) {
             lock = null;
+            board = null;
             steady.reset();
           }
           hud.status("detect", `${detection.latencyMs.toFixed(1)} ms`);
@@ -347,6 +352,22 @@ function startLoop(
     const box = videoBox(video, canvas);
     ctx.drawImage(video, box.x, box.y, box.w, box.h);
 
+    if (lock && board === null && now - lastBoardReadAt > 1500) {
+      lastBoardReadAt = now;
+      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      board = fitBoard(
+        image,
+        lock.quad.map((point) => ({
+          x: box.x + point.x * box.w,
+          y: box.y + point.y * box.h,
+        })),
+      );
+      hud.status(
+        "keys",
+        board ? `${board.lowest} to ${board.highest}` : "reading black keys",
+      );
+    }
+
     ctx.save();
     ctx.translate(box.x, box.y);
     if (lock) {
@@ -358,8 +379,8 @@ function startLoop(
         lock.onKeybed ? AUTO_COLOR : WEAK_COLOR,
         lock.onKeybed ? "keybed" : "no key pattern",
       );
-      if (SHOW_KEY_MASKS) {
-        drawKeyMasks(ctx, lock.quad, box.w, box.h);
+      if (SHOW_KEY_MASKS && board) {
+        drawKeyMasks(ctx, lock.quad, board, box.w, box.h);
       }
     }
     if (hud.state.corners) {
