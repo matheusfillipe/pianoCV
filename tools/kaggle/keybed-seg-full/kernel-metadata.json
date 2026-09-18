@@ -1,0 +1,14 @@
+{
+  "id": "mattflyx/keybed-segmentation-full",
+  "title": "Keybed segmentation full",
+  "code_file": "keybed-seg-full.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": false,
+  "dataset_sources": [
+    "mattflyx/kvt-segmentation-source",
+    "mattflyx/kvt-keybed-segmentation-corpus"
+  ]
+}
