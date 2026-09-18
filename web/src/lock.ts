@@ -2,7 +2,7 @@ import type { Detection } from "./detector";
 import { INPUT_SIZE } from "./detector";
 import type { Point } from "./homography";
 import { facing } from "./orient";
-import { solvePose } from "./pose";
+import { canonicalQuad, solvePose } from "./pose";
 import { checkQuad } from "./quad";
 
 /** A keybed the picture supports, or the reason it was refused. Nothing on
@@ -30,7 +30,9 @@ function turnedIfReversed(detection: Detection): {
   onKeybed: boolean;
   inputQuad: Point[];
 } {
-  const source = detection.inputQuad ?? detection.quad ?? [];
+  // First establish the physical axes: 0→1 is the long white-key span and 1→2 is
+  // key depth. The black-key brightness test below resolves only the remaining 180° choice.
+  const source = canonicalQuad(detection.quad ?? []);
   const asDetected = facing(detection.gray, INPUT_SIZE, source);
   const reversed = asDetected.margin < 0;
   const turn = (quad: Point[]): Point[] =>
@@ -43,9 +45,7 @@ function turnedIfReversed(detection: Detection): {
     ? facing(detection.gray, INPUT_SIZE, turn(source))
     : asDetected;
   return {
-    // The fitted rectangle preserves the detector's observed depth direction.  Do not label
-    // the wider end as the back: at a frontal view that is exactly the player-facing edge.
-    quad: turn(detection.quad ?? []),
+    quad: turn(source),
     margin: facts.margin,
     onKeybed: facts.onKeybed,
     inputQuad: facts.quad,
