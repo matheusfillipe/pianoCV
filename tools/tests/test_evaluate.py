@@ -158,6 +158,21 @@ def test_run_marks_held_out_frames(tmp_path: Path) -> None:
     assert [result.trained for result in results] == [False]
 
 
+def test_run_filters_repeatable_source_stems(tmp_path: Path) -> None:
+    frames_dir = tmp_path / "frames"
+    out_dir = tmp_path / "out"
+    _make_frames(frames_dir)
+    image_path = frames_dir / "snap-eval.png"
+    corners = np.array([[60, 80], [260, 80], [260, 104], [60, 104]])
+    frames = [
+        Frame(image_path, corners, "keep", "snap"),
+        Frame(image_path, corners, "drop", "snap"),
+    ]
+    with patch("kvt.evaluate.load_frames", return_value=frames):
+        results = run(frames_dir, out_dir, source_stems={"keep"})
+    assert [result.source_stem for result in results] == ["keep"]
+
+
 def test_dataset_main_with_explicit_dirs(tmp_path: Path) -> None:
     recordings_dir = tmp_path / "recordings"
     frames_dir = tmp_path / "frames"

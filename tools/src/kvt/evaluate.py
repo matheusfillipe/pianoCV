@@ -180,8 +180,11 @@ def run(
     method: Method = "pattern",
     model_path: Path = DEFAULT_MODEL_PATH,
     constrained: bool = False,
+    source_stems: set[str] | None = None,
 ) -> list[FrameResult]:
     frames = load_frames(frames_dir)
+    if source_stems is not None:
+        frames = [frame for frame in frames if frame.source_stem in source_stems]
     out_dir.mkdir(parents=True, exist_ok=True)
     detector = _detector_for(method, model_path, constrained)
     trained = fine_tuned_frames(frames)
@@ -293,9 +296,22 @@ def main() -> None:
     parser.add_argument(
         "--constrained", action="store_true", help="refit as the keybed rectangle in 3D"
     )
+    parser.add_argument(
+        "--source-stem",
+        action="append",
+        dest="source_stems",
+        help="evaluate only frames from this source; repeat for multiple sources",
+    )
     args = parser.parse_args()
     method = cast(Method, args.method) if args.method is not None else default_method()
-    run(args.frames_dir, args.out_dir, method, args.model, args.constrained)
+    run(
+        args.frames_dir,
+        args.out_dir,
+        method,
+        args.model,
+        args.constrained,
+        set(args.source_stems) if args.source_stems is not None else None,
+    )
 
 
 if __name__ == "__main__":
