@@ -18,5 +18,9 @@ export interface Frame {
     width: number;
     height: number;
 }
+export declare function endMovesOnlyInward(quad: Point[], end: number, moves: readonly {
+    corner: number;
+    point: Point;
+}[]): boolean;
 export declare function refineEnds(frame: Frame, quad: Point[]): Point[];
 export declare function fitRectangle(points: Point[], coarseQuad: Point[], width: number, height: number, focal?: number, frame?: Frame): RectFit | null;

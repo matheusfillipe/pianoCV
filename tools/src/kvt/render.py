@@ -95,6 +95,7 @@ def render_sample(
     quad = _sample_quad(rng, width, height, white_count)
     canvas = _render_background(rng, width, height)
     if present:
+        _maybe_add_control_panel(canvas, quad, rng)
         _draw_keybed(canvas, quad, rng, white_count)
         _maybe_add_glare(canvas, rng)
         _maybe_add_occluders(canvas, quad, rng)
@@ -353,6 +354,45 @@ def _draw_keybed(
     canvas[inside] = warped[inside]
     sigma = float(rng.uniform(*_BLUR_SIGMA_RANGE))
     canvas[:] = cv2.GaussianBlur(canvas, (0, 0), sigma)
+
+
+def _maybe_add_control_panel(
+    canvas: np.ndarray, quad: np.ndarray, rng: np.random.Generator
+) -> None:
+    """Draw the dark button-filled body behind a keyboard without labelling it as keybed."""
+    if rng.random() >= 0.7:
+        return
+    panel = np.array(
+        [
+            [-0.08, -0.95],
+            [1.08, -0.95],
+            [1.08, 0.04],
+            [-0.08, 0.04],
+        ],
+        dtype=np.float32,
+    )
+    source = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=np.float32)
+    panel_quad = cv2.perspectiveTransform(
+        panel[None, :, :], cv2.getPerspectiveTransform(source, quad.astype(np.float32))
+    )[0]
+    cv2.fillPoly(canvas, [panel_quad.astype(np.int32)], (22.0, 25.0, 28.0))
+    for _ in range(int(rng.integers(18, 46))):
+        u = float(rng.uniform(0.03, 0.97))
+        v = float(rng.uniform(0.08, 0.88))
+        button = np.array(
+            [
+                [u - 0.012, v - 0.025],
+                [u + 0.012, v - 0.025],
+                [u + 0.012, v + 0.025],
+                [u - 0.012, v + 0.025],
+            ],
+            dtype=np.float32,
+        )
+        points = cv2.perspectiveTransform(
+            button[None, :, :], cv2.getPerspectiveTransform(source, panel_quad.astype(np.float32))
+        )[0]
+        shade = float(rng.uniform(95.0, 190.0))
+        cv2.fillPoly(canvas, [points.astype(np.int32)], (shade, shade, shade))
 
 
 def _keybed_sheet(rng: np.random.Generator, white_count: float) -> np.ndarray:
