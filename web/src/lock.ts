@@ -30,9 +30,7 @@ function turnedIfReversed(detection: Detection): {
   onKeybed: boolean;
   inputQuad: Point[];
 } {
-  // First establish the physical axes: 0→1 is the long white-key span and 1→2 is
-  // key depth. The black-key brightness test below resolves only the remaining 180° choice.
-  const source = canonicalQuad(detection.quad ?? []);
+  const source = detection.inputQuad ?? detection.quad ?? [];
   const asDetected = facing(detection.gray, INPUT_SIZE, source);
   const reversed = asDetected.margin < 0;
   const turn = (quad: Point[]): Point[] =>
@@ -45,7 +43,7 @@ function turnedIfReversed(detection: Detection): {
     ? facing(detection.gray, INPUT_SIZE, turn(source))
     : asDetected;
   return {
-    quad: turn(source),
+    quad: canonicalQuad(turn(canonicalQuad(detection.quad ?? []))),
     margin: facts.margin,
     onKeybed: facts.onKeybed,
     inputQuad: facts.quad,
