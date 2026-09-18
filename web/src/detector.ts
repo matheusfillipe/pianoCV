@@ -2,8 +2,7 @@ import * as ort from "onnxruntime-web/wasm";
 import type { RuntimeAssets } from "./assets";
 import { quadFromMask } from "./fitquad";
 import type { Point } from "./homography";
-import { cameraFocalFraction, canonicalQuad } from "./pose";
-import { checkQuad } from "./quad";
+import { cameraFocalFraction } from "./pose";
 import {
   boundaryPoints,
   boundaryResidual,
@@ -420,27 +419,18 @@ export async function createDetector(
         refineHeight,
         still,
       );
-      // The perspective solver can latch onto a casing contrast and turn one keybed end into
-      // a wedge. A valid mask proposal is safer than that physically impossible refinement.
-      const usable = (candidate: Point[] | null): candidate is Point[] =>
-        candidate !== null && checkQuad(canonicalQuad(candidate)).usable;
-      const selected = usable(constrained)
-        ? constrained
-        : usable(refined)
-          ? refined
-          : constrained;
       return {
         motion: change,
         still,
         // the mask grid is square while the frame is not, so corners come back in frame fractions
-        quad: selected
-          ? selected.map((p) => ({
+        quad: constrained
+          ? constrained.map((p) => ({
               x: p.x / refineWidth,
               y: p.y / refineHeight,
             }))
           : null,
-        inputQuad: selected
-          ? selected.map((p) => ({
+        inputQuad: constrained
+          ? constrained.map((p) => ({
               x: p.x / refineWidth,
               y: p.y / refineHeight,
             }))
@@ -448,11 +438,11 @@ export async function createDetector(
         mask,
         maskSize: MASK_SIZE,
         coverage: kept / probability.length,
-        confidence: selected
+        confidence: constrained
           ? meanInside(
               probability,
               MASK_SIZE,
-              selected.map((p) => ({
+              constrained.map((p) => ({
                 x: p.x / refineWidth,
                 y: p.y / refineHeight,
               })),
