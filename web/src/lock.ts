@@ -2,7 +2,7 @@ import type { Detection } from "./detector";
 import { INPUT_SIZE } from "./detector";
 import type { Point } from "./homography";
 import { facing } from "./orient";
-import { canonicalQuad, solvePose } from "./pose";
+import { solvePose } from "./pose";
 import { checkQuad } from "./quad";
 
 /** A keybed the picture supports, or the reason it was refused. Nothing on
@@ -43,7 +43,9 @@ function turnedIfReversed(detection: Detection): {
     ? facing(detection.gray, INPUT_SIZE, turn(source))
     : asDetected;
   return {
-    quad: canonicalQuad(turn(canonicalQuad(detection.quad ?? []))),
+    // The fitted rectangle preserves the detector's observed depth direction.  Do not label
+    // the wider end as the back: at a frontal view that is exactly the player-facing edge.
+    quad: turn(detection.quad ?? []),
     margin: facts.margin,
     onKeybed: facts.onKeybed,
     inputQuad: facts.quad,
