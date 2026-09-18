@@ -6,7 +6,7 @@ MODEL_REPO := mattf/keybed-seg
 .PHONY: help install fix precommit check list-lab-data lab-extract lab-train lab-detect \
         tools-fix tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
-        build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export lab-evaluate
+        build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export lab-evaluate lab-real-seg2-prepare
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -131,6 +131,9 @@ lab-detect: lab-extract ## evaluate keybed detector on extracted frames, split b
 
 lab-evaluate: ## evaluate a detector on already-extracted labelled frames
 	cd tools && uv run python -m kvt.evaluate $(ARGS)
+
+lab-real-seg2-prepare: ## prepare real labelled frames for SegNet2 fine-tuning
+	cd tools && uv run python -m kvt.realseg2 $(ARGS)
 
 clean: ## remove local caches and build artifacts
 	rm -rf tools/.ruff_cache tools/.mypy_cache tools/.pytest_cache tools/.coverage tools/.coverage.* tools/.vulture web/dist
