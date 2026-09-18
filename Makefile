@@ -13,7 +13,7 @@ KAGGLE_KEY_ALIGNMENT_OUTPUT_DIR ?= data/models/kaggle-key-alignment
         lab-calibration-eval \
         tools-fix tools-lock tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
-        build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export lab-evaluate
+        build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export lab-evaluate lab-real-seg2-prepare
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -144,6 +144,9 @@ lab-detect: lab-extract ## evaluate keybed detector on extracted frames, split b
 
 lab-evaluate: ## evaluate a detector on already-extracted labelled frames
 	cd tools && uv run python -m kvt.evaluate $(ARGS)
+
+lab-real-seg2-prepare: ## prepare real labelled frames for SegNet2 fine-tuning
+	cd tools && uv run python -m kvt.realseg2 $(ARGS)
 
 lab-key-instances-prepare: ## make a separate Kaggle-ready per-key dataset from data/key-instances
 	cd tools && uv run python -m kvt.keyinstances $(ARGS)
