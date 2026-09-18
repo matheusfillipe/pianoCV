@@ -3,7 +3,6 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import pytest
 
 from kvt.dataset import (
     canonical_quad,
@@ -116,25 +115,50 @@ def test_scan_recordings_skips_sidecar_less_media(tmp_path: Path) -> None:
     assert recordings[0].media_path.name == "snap-a.png"
 
 
-def test_extract_raises_on_unreadable_snapshot(tmp_path: Path) -> None:
+def test_extract_skips_unreadable_snapshot(tmp_path: Path) -> None:
     recordings_dir = tmp_path / "recordings"
     recordings_dir.mkdir()
     (recordings_dir / "snap-bad.png").write_text("not an image")
     _write_sidecar(recordings_dir / "snap-bad.json", "snap", 320, 240)
-    with pytest.raises(ValueError, match="cannot read snapshot"):
-        extract(recordings_dir, tmp_path / "frames")
+    frames = extract(recordings_dir, tmp_path / "frames")
+    assert frames == []
+    assert json.loads((tmp_path / "frames" / "labels.json").read_text()) == {
+        "extracted": {},
+        "frames": {},
+    }
 
 
-def test_extract_raises_on_unopenable_clip(tmp_path: Path) -> None:
+def test_extract_skips_unopenable_clip(tmp_path: Path) -> None:
     recordings_dir = tmp_path / "recordings"
     recordings_dir.mkdir()
     (recordings_dir / "rec-bad.webm").write_text("not a video")
     _write_sidecar(recordings_dir / "rec-bad.json", "rec", 320, 240)
-    with pytest.raises(ValueError, match="cannot open clip"):
-        extract(recordings_dir, tmp_path / "frames")
+    frames = extract(recordings_dir, tmp_path / "frames")
+    assert frames == []
+    assert json.loads((tmp_path / "frames" / "labels.json").read_text()) == {
+        "extracted": {},
+        "frames": {},
+    }
 
 
-def test_extract_raises_on_invalid_sidecars(tmp_path: Path) -> None:
+def test_extract_persists_valid_recordings_when_one_is_unreadable(tmp_path: Path) -> None:
+    recordings_dir = tmp_path / "recordings"
+    frames_dir = tmp_path / "frames"
+    recordings_dir.mkdir()
+    _write_snap(recordings_dir / "snap-good.png")
+    _write_sidecar(recordings_dir / "snap-good.json", "snap", 320, 240)
+    (recordings_dir / "rec-bad.webm").write_text("not a video")
+    _write_sidecar(recordings_dir / "rec-bad.json", "rec", 320, 240)
+
+    frames = extract(recordings_dir, frames_dir)
+
+    assert [frame.source_stem for frame in frames] == ["snap-good"]
+    labels = json.loads((frames_dir / "labels.json").read_text())
+    assert labels["extracted"] == {"snap-good": 1}
+    assert set(labels["frames"]) == {"snap-good.png"}
+
+
+def test_extract_skips_invalid_sidecars(tmp_path: Path) -> None:
     recordings_dir = tmp_path / "recordings"
     frames_dir = tmp_path / "frames"
     recordings_dir.mkdir()
@@ -163,9 +187,11 @@ def test_extract_raises_on_invalid_sidecars(tmp_path: Path) -> None:
     ]
     for content in cases:
         sidecar.write_text(content)
-        with pytest.raises(ValueError):
-            extract(recordings_dir, frames_dir)
-        (frames_dir / "labels.json").unlink(missing_ok=True)
+        assert extract(recordings_dir, frames_dir) == []
+        assert json.loads((frames_dir / "labels.json").read_text()) == {
+            "extracted": {},
+            "frames": {},
+        }
 
 
 def _write_gemini_scene(gemini_dir: Path, stem: str, with_kind: bool) -> None:

@@ -3,6 +3,7 @@
 import argparse
 import json
 import shutil
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -180,16 +181,20 @@ def extract(recordings_dir: Path, frames_dir: Path, gemini_dir: Path | None = No
     for recording in recordings:
         if recording.stem in labels.extracted:
             continue
-        sidecar = parse_sidecar(
-            recording.sidecar_path, "gemini" if recording.kind == "gemini" else None
-        )
-        corners_px = sidecar.corners * np.array([float(sidecar.width), float(sidecar.height)])
-        if recording.kind == "snap":
-            _extract_snap(recording, frames_dir, corners_px, labels)
-        elif recording.kind == "gemini":
-            _extract_gemini(recording, frames_dir, corners_px, labels)
-        else:
-            _extract_clip(recording, frames_dir, corners_px, labels)
+        try:
+            sidecar = parse_sidecar(
+                recording.sidecar_path, "gemini" if recording.kind == "gemini" else None
+            )
+            corners_px = sidecar.corners * np.array([float(sidecar.width), float(sidecar.height)])
+            if recording.kind == "snap":
+                _extract_snap(recording, frames_dir, corners_px, labels)
+            elif recording.kind == "gemini":
+                _extract_gemini(recording, frames_dir, corners_px, labels)
+            else:
+                _extract_clip(recording, frames_dir, corners_px, labels)
+        except ValueError as error:
+            warnings.warn(f"skipping recording {recording.media_path}: {error}", stacklevel=2)
+            continue
         labels.extracted[recording.stem] = sum(
             1 for entry in labels.frames.values() if entry.source_stem == recording.stem
         )

@@ -13,7 +13,7 @@ KAGGLE_KEY_ALIGNMENT_OUTPUT_DIR ?= data/models/kaggle-key-alignment
         lab-calibration-eval \
         tools-fix tools-lock tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
-        build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export
+        build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export lab-evaluate
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -120,7 +120,7 @@ lab-dump: ## render procedural frames to disk (data/procedural)
 	cd tools && uv run python -m kvt.dump $(ARGS)
 
 lab-export-seg2: ## export the pretrained segmentation detector to web/public/keybed_seg2.onnx
-	cd tools && uv run python -m kvt.export --seg2
+	cd tools && uv run python -m kvt.export --seg2 $(ARGS)
 
 lab-jitter: ## measure how much the detection moves on static recordings
 	cd tools && uv run python -m kvt.jitter $(ARGS)
@@ -140,6 +140,9 @@ lab-corpus-zip: lab-corpus-bake ## pack data/corpus into data/keybed-corpus.zip 
 	@ls -lh data/keybed-corpus.zip
 
 lab-detect: lab-extract ## evaluate keybed detector on extracted frames, split by fine-tuned vs held out
+	cd tools && uv run python -m kvt.evaluate $(ARGS)
+
+lab-evaluate: ## evaluate a detector on already-extracted labelled frames
 	cd tools && uv run python -m kvt.evaluate $(ARGS)
 
 lab-key-instances-prepare: ## make a separate Kaggle-ready per-key dataset from data/key-instances
