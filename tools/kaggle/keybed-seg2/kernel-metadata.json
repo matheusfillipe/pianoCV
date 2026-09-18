@@ -9,6 +9,7 @@
   "enable_internet": true,
   "dataset_sources": [
     "mattflyx/kvt-segmentation-source",
-    "mattflyx/kvt-keybed-segmentation-corpus"
+    "mattflyx/kvt-keybed-segmentation-corpus",
+    "mattflyx/kvt-keybed-seg2-real"
   ]
 }

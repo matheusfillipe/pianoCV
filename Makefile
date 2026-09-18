@@ -1,9 +1,11 @@
 BUN := bun --cwd=web
 UV := uv run --project tools
 MODEL_REPO := mattf/keybed-seg
+KAGGLE_SEG2_OUTPUT_DIR ?= data/models/kaggle-keybed-seg2-real
 
 .DEFAULT_GOAL := help
 .PHONY: help install fix precommit check list-lab-data lab-extract lab-train lab-detect \
+        lab-seg2-kaggle-run lab-seg2-kaggle-output \
         tools-fix tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
         build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export lab-evaluate lab-real-seg2-prepare
@@ -134,6 +136,13 @@ lab-evaluate: ## evaluate a detector on already-extracted labelled frames
 
 lab-real-seg2-prepare: ## prepare real labelled frames for SegNet2 fine-tuning
 	cd tools && uv run python -m kvt.realseg2 $(ARGS)
+
+lab-seg2-kaggle-run: ## push and start the private real-frame Seg2 fine-tuning notebook
+	kaggle kernels push -p tools/kaggle/keybed-seg2
+
+lab-seg2-kaggle-output: ## download completed private real-frame Seg2 artifacts
+	mkdir -p $(KAGGLE_SEG2_OUTPUT_DIR)
+	kaggle kernels output mattflyx/keybed-segmentation-seg2 -p $(KAGGLE_SEG2_OUTPUT_DIR) --force
 
 clean: ## remove local caches and build artifacts
 	rm -rf tools/.ruff_cache tools/.mypy_cache tools/.pytest_cache tools/.coverage tools/.coverage.* tools/.vulture web/dist
