@@ -4,12 +4,14 @@ MODEL_REPO := mattf/keybed-seg
 KAGGLE_KEY_INSTANCES_DIR ?= data/key-instances/kaggle-20260916-v2
 KAGGLE_KEY_INSTANCES_VERSION_MESSAGE ?= include per-key target folders
 KAGGLE_KEY_ALIGNMENT_OUTPUT_DIR ?= data/models/kaggle-key-alignment
+KAGGLE_SEG2_OUTPUT_DIR ?= data/models/kaggle-keybed-seg2-real
 
 .DEFAULT_GOAL := help
 .PHONY: help install fix precommit check list-lab-data lab-extract lab-train lab-detect \
         lab-key-instances-prepare lab-key-instances-archive \
         lab-key-instances-kaggle-push lab-key-instances-kaggle-version lab-key-instances-kaggle-run \
         lab-key-instances-kaggle-output lab-key-instances-kaggle-evaluate \
+        lab-seg2-kaggle-run lab-seg2-kaggle-output \
         lab-calibration-eval \
         tools-fix tools-lock tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
@@ -147,6 +149,13 @@ lab-evaluate: ## evaluate a detector on already-extracted labelled frames
 
 lab-real-seg2-prepare: ## prepare real labelled frames for SegNet2 fine-tuning
 	cd tools && uv run python -m kvt.realseg2 $(ARGS)
+
+lab-seg2-kaggle-run: ## push and start the private real-frame Seg2 fine-tuning notebook
+	kaggle kernels push -p tools/kaggle/keybed-seg2
+
+lab-seg2-kaggle-output: ## download completed private real-frame Seg2 artifacts
+	mkdir -p $(KAGGLE_SEG2_OUTPUT_DIR)
+	kaggle kernels output mattflyx/keybed-segmentation-seg2 -p $(KAGGLE_SEG2_OUTPUT_DIR) --force
 
 lab-key-instances-prepare: ## make a separate Kaggle-ready per-key dataset from data/key-instances
 	cd tools && uv run python -m kvt.keyinstances $(ARGS)
