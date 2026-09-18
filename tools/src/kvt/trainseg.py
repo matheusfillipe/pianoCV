@@ -88,15 +88,20 @@ def _iou(logits: torch.Tensor, target: torch.Tensor) -> float:
 
 
 def _evaluate(
-    model: KeybedSegNet, pool: Pool | None, samples: int, batch_size: int, seed: int
+    model: KeybedSegNet,
+    pool: Pool | None,
+    samples: int,
+    batch_size: int,
+    seed: int,
+    device: torch.device,
 ) -> float:
     model.eval()
     total = 0.0
     seen = 0
     with torch.no_grad():
         for inputs, masks in _iter_batches(pool, seed + 1, 0, samples, batch_size):
-            logits = model(torch.from_numpy(inputs).unsqueeze(1))
-            total += _iou(logits, torch.from_numpy(masks).unsqueeze(1)) * inputs.shape[0]
+            logits = model(torch.from_numpy(inputs).unsqueeze(1).to(device))
+            total += _iou(logits, torch.from_numpy(masks).unsqueeze(1).to(device)) * inputs.shape[0]
             seen += inputs.shape[0]
     return total / max(seen, 1)
 
@@ -115,7 +120,8 @@ def train_seg(
     synth_fraction: float = _SYNTH_FRACTION,
 ) -> tuple[KeybedSegNet, float]:
     torch.manual_seed(seed)
-    model = KeybedSegNet()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = KeybedSegNet().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=_LEARNING_RATE)
     steps = math.ceil(train_samples / batch_size) * epochs
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -147,14 +153,14 @@ def train_seg(
                     batch_inputs = np.concatenate([batch_inputs, pool_items[0][pick]])
                     batch_masks = np.concatenate([batch_masks, pool_items[1][pick]])
                 optimizer.zero_grad()
-                logits = model(torch.from_numpy(batch_inputs).unsqueeze(1))
-                loss = F.binary_cross_entropy_with_logits(
-                    logits, torch.from_numpy(batch_masks).unsqueeze(1)
-                )
+                inputs = torch.from_numpy(batch_inputs).unsqueeze(1).to(device)
+                targets = torch.from_numpy(batch_masks).unsqueeze(1).to(device)
+                logits = model(inputs)
+                loss = F.binary_cross_entropy_with_logits(logits, targets)
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
-            iou = _evaluate(model, pool, val_samples, batch_size, seed)
+            iou = _evaluate(model, pool, val_samples, batch_size, seed, device)
             print(f"epoch {epoch + 1}/{epochs} val_iou {iou:.4f}", flush=True)
             if iou > best:
                 best = iou
