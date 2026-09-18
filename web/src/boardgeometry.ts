@@ -42,15 +42,17 @@ function level(image: ImageData, p: Point): number | null {
   );
 }
 
-interface EdgeSample {
-  u: number;
-  point: Point;
-}
-
 interface Line {
   point: Point;
   dx: number;
   dy: number;
+}
+
+function lineThrough(a: Point, b: Point): Line | null {
+  const length = Math.hypot(b.x - a.x, b.y - a.y);
+  return length < 1e-6
+    ? null
+    : { point: a, dx: (b.x - a.x) / length, dy: (b.y - a.y) / length };
 }
 
 function fitLine(points: readonly Point[]): Line | null {
@@ -87,35 +89,13 @@ function distanceToLine(point: Point, line: Line): number {
   );
 }
 
-function solve3(matrix: number[][], rhs: number[]): number[] | null {
-  const rows = matrix.map((row, index) => [...row, rhs[index] ?? 0]);
-  for (let column = 0; column < 3; column += 1) {
-    let pivot = column;
-    for (let row = column + 1; row < 3; row += 1) {
-      if (
-        Math.abs(rows[row][column] ?? 0) > Math.abs(rows[pivot][column] ?? 0)
-      ) {
-        pivot = row;
-      }
-    }
-    if (Math.abs(rows[pivot][column] ?? 0) < 1e-9) return null;
-    [rows[column], rows[pivot]] = [rows[pivot] ?? [], rows[column] ?? []];
-    for (let row = column + 1; row < 3; row += 1) {
-      const factor = (rows[row][column] ?? 0) / (rows[column][column] ?? 1);
-      for (let at = column; at <= 3; at += 1) {
-        rows[row][at] = (rows[row][at] ?? 0) - factor * (rows[column][at] ?? 0);
-      }
-    }
-  }
-  const solution = [0, 0, 0];
-  for (let row = 2; row >= 0; row -= 1) {
-    let value = rows[row][3] ?? 0;
-    for (let column = row + 1; column < 3; column += 1) {
-      value -= (rows[row][column] ?? 0) * (solution[column] ?? 0);
-    }
-    solution[row] = value / (rows[row][row] ?? 1);
-  }
-  return solution;
+function intersect(a: Line, b: Line): Point | null {
+  const determinant = a.dx * b.dy - b.dx * a.dy;
+  if (Math.abs(determinant) < 1e-6) return null;
+  const rx = b.point.x - a.point.x;
+  const ry = b.point.y - a.point.y;
+  const t = (rx * b.dy - ry * b.dx) / determinant;
+  return { x: a.point.x + t * a.dx, y: a.point.y + t * a.dy };
 }
 
 function cross(a: Point, b: Point, c: Point): number {
@@ -161,126 +141,62 @@ function validQuad(
   });
 }
 
-function safeSegmentPoint(
-  point: Point,
-  start: Point,
-  end: Point,
-): Point | null {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const lengthSquared = dx * dx + dy * dy;
-  if (lengthSquared < 1e-6) return null;
-  const length = Math.sqrt(lengthSquared);
-  const raw =
-    ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared;
-  if (raw < -0.08 || raw > 1.08) return null;
-  const t = Math.min(1, Math.max(0, raw));
-  const perpendicular =
-    Math.abs((point.x - start.x) * dy - (point.y - start.y) * dx) / length;
-  if (perpendicular > Math.max(8, 0.15 * length)) return null;
-  return { x: start.x + t * dx, y: start.y + t * dy };
-}
-
 function edge(
-  samples: readonly EdgeSample[],
+  points: readonly Point[],
   left: readonly [Point, Point],
   right: readonly [Point, Point],
+  longStart: Point,
+  longEnd: Point,
 ): [Point, Point] | null {
-  if (samples.length < 8) return null;
+  const long = lineThrough(longStart, longEnd);
+  const leftSide = lineThrough(left[0], left[1]);
+  const rightSide = lineThrough(right[0], right[1]);
+  if (!long || !leftSide || !rightSide || points.length < 8) return null;
 
   // A panel graphic can produce a convincing local gradient. Require edge
-  // evidence over most of the canonical keyboard before moving an endpoint.
-  const us = samples.map((sample) => sample.u);
-  if (Math.min(...us) > 0.15 || Math.max(...us) < 0.85) return null;
-
-  let fitted = fitLine(samples.map((sample) => sample.point));
-  if (!fitted) return null;
-  const initial = fitted;
-  const residuals = samples.map((sample) =>
-    distanceToLine(sample.point, initial),
+  // evidence over most of the keybed before allowing it to move a corner.
+  const along = points.map(
+    (point) =>
+      (point.x - longStart.x) * long.dx + (point.y - longStart.y) * long.dy,
   );
-  const typical = median(residuals);
-  const inliers = samples.filter(
-    (sample) =>
-      distanceToLine(sample.point, initial) <= Math.max(2, 3 * typical),
-  );
-  if (inliers.length < 8) return null;
-  fitted = fitLine(inliers.map((sample) => sample.point));
-  if (!fitted) return null;
-  const finalResidual = median(
-    inliers.map((sample) => distanceToLine(sample.point, fitted)),
-  );
+  const extent = Math.max(...along) - Math.min(...along);
   if (
-    finalResidual > 4 ||
-    Math.max(...inliers.map((sample) => distanceToLine(sample.point, fitted))) >
-      10
+    extent <
+    0.65 * Math.hypot(longEnd.x - longStart.x, longEnd.y - longStart.y)
   ) {
     return null;
   }
 
-  const scale = Math.max(
-    1,
-    ...inliers.map((sample) =>
-      Math.abs(
-        (sample.point.x - fitted.point.x) * fitted.dx +
-          (sample.point.y - fitted.point.y) * fitted.dy,
-      ),
-    ),
+  let fitted = fitLine(points);
+  if (!fitted) return null;
+  const initial = fitted;
+  const residuals = points.map((point) => distanceToLine(point, initial));
+  const typical = median(residuals);
+  const inliers = points.filter(
+    (point) => distanceToLine(point, initial) <= Math.max(2, 3 * typical),
   );
-  const normal = [
-    [0, 0, 0],
-    [0, 0, 0],
-    [0, 0, 0],
-  ];
-  const rhs = [0, 0, 0];
-  for (const sample of inliers) {
-    const along =
-      ((sample.point.x - fitted.point.x) * fitted.dx +
-        (sample.point.y - fitted.point.y) * fitted.dy) /
-      scale;
-    const row = [sample.u, 1, -along * sample.u];
-    for (let rowIndex = 0; rowIndex < 3; rowIndex += 1) {
-      rhs[rowIndex] = (rhs[rowIndex] ?? 0) + row[rowIndex] * along;
-      for (let column = 0; column < 3; column += 1) {
-        normal[rowIndex][column] =
-          (normal[rowIndex][column] ?? 0) + row[rowIndex] * row[column];
-      }
-    }
+  if (inliers.length < 8) return null;
+  const keptAlong = inliers.map(
+    (point) =>
+      (point.x - longStart.x) * long.dx + (point.y - longStart.y) * long.dy,
+  );
+  if (
+    Math.max(...keptAlong) - Math.min(...keptAlong) <
+    0.65 * Math.hypot(longEnd.x - longStart.x, longEnd.y - longStart.y)
+  ) {
+    return null;
   }
-  const coefficients = solve3(normal, rhs);
-  if (!coefficients) return null;
-  const at = (u: number): number | null => {
-    const denominator = 1 + (coefficients[2] ?? 0) * u;
-    if (Math.abs(denominator) < 0.1) return null;
-    return (
-      (((coefficients[0] ?? 0) * u + (coefficients[1] ?? 0)) / denominator) *
-      scale
-    );
-  };
-  const startAlong = at(0);
-  const endAlong = at(1);
-  if (startAlong === null || endAlong === null) return null;
-  const start = {
-    x: fitted.point.x + fitted.dx * startAlong,
-    y: fitted.point.y + fitted.dy * startAlong,
-  };
-  const end = {
-    x: fitted.point.x + fitted.dx * endAlong,
-    y: fitted.point.y + fitted.dy * endAlong,
-  };
-  const projectiveResidual = median(
-    inliers.map((sample) => {
-      const predicted = at(sample.u);
-      const actual =
-        (sample.point.x - fitted.point.x) * fitted.dx +
-        (sample.point.y - fitted.point.y) * fitted.dy;
-      return predicted === null ? Infinity : Math.abs(predicted - actual);
-    }),
+  if (inliers.length >= 8 && inliers.length < points.length) {
+    fitted = fitLine(inliers);
+  }
+  if (!fitted) return null;
+  const finalResidual = median(
+    points.map((point) => distanceToLine(point, fitted)),
   );
-  if (projectiveResidual > 4) return null;
-  const safeStart = safeSegmentPoint(start, left[0], left[1]);
-  const safeEnd = safeSegmentPoint(end, right[0], right[1]);
-  return safeStart && safeEnd ? [safeStart, safeEnd] : null;
+  if (finalResidual > 4) return null;
+  const start = intersect(fitted, leftSide);
+  const end = intersect(fitted, rightSide);
+  return start && end ? [start, end] : null;
 }
 
 export function refineBoardEdges(
@@ -289,8 +205,8 @@ export function refineBoardEdges(
   board: Board,
 ): Point[] {
   const h = findHomography(unit, quad);
-  const rear: EdgeSample[] = [],
-    front: EdgeSample[] = [];
+  const rear: Point[] = [],
+    front: Point[] = [];
   for (let pitch = board.lowest; pitch <= board.highest; pitch += 1) {
     if (isBlack(pitch)) continue;
     const key = keyUnits(pitch);
@@ -302,11 +218,10 @@ export function refineBoardEdges(
     ] as const) {
       let best = 20,
         found: number | null = null;
-      // The model proposal is the outer safety envelope. Visual refinement may
-      // only pull an edge onto the keybed, never grow it into the case or table.
-      const firstStep = boundary === 0 ? 0 : -40;
-      const lastStep = boundary === 0 ? 40 : 0;
-      for (let step = firstStep; step <= lastStep; step += 1) {
+      // Mask quads are often cut a few tenths of the key depth into the case.
+      // Search a wider adaptive band, while the distributed line fit below
+      // rejects isolated case/panel edges.
+      for (let step = -40; step <= 40; step += 1) {
         const v = boundary + step * 0.01;
         const inside = level(
           image,
@@ -324,12 +239,24 @@ export function refineBoardEdges(
         }
       }
       if (found !== null) {
-        output.push({ u, point: applyHomography(h, u, found) });
+        output.push(applyHomography(h, u, found));
       }
     }
   }
-  const back = edge(rear, [quad[0], quad[3]], [quad[1], quad[2]]);
-  const near = edge(front, [quad[3], quad[0]], [quad[2], quad[1]]);
+  const back = edge(
+    rear,
+    [quad[0], quad[3]],
+    [quad[1], quad[2]],
+    quad[0],
+    quad[1],
+  );
+  const near = edge(
+    front,
+    [quad[3], quad[0]],
+    [quad[2], quad[1]],
+    quad[3],
+    quad[2],
+  );
   const candidate = [
     back?.[0] ?? quad[0],
     back?.[1] ?? quad[1],

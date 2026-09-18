@@ -210,34 +210,6 @@ function clockwise(quad: Point[]): Point[] {
   return signedArea(quad) >= 0 ? quad : [quad[1], quad[0], quad[3], quad[2]];
 }
 
-// The rectangle solver may rotate its world frame to improve conditioning.  Its caller still
-// needs the detector's front/back order: black-key evidence, not the wider projected edge,
-// decides which end is the rear.
-function orderLike(quad: Point[], observed: Point[]): Point[] {
-  let best = quad;
-  let error = Infinity;
-  const candidates = [quad, [...quad].reverse()];
-  for (const candidate of candidates) {
-    for (let offset = 0; offset < 4; offset += 1) {
-      const ordered = candidate.map(
-        (_, index) => candidate[(index + offset) % 4],
-      );
-      const cost = ordered.reduce(
-        (sum, point, index) =>
-          sum +
-          (point.x - observed[index].x) ** 2 +
-          (point.y - observed[index].y) ** 2,
-        0,
-      );
-      if (cost < error) {
-        best = ordered;
-        error = cost;
-      }
-    }
-  }
-  return best;
-}
-
 function dot(a: number[], b: number[]): number {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
@@ -876,39 +848,6 @@ export interface Frame {
   height: number;
 }
 
-// An end correction is evidence for where the visible keys stop, not permission to grow the
-// detector's keybed onto the casing. Keep every corrected corner on the keybed side of its
-// fitted end. A one-pixel tolerance preserves harmless rasterisation noise.
-export function endMovesOnlyInward(
-  quad: Point[],
-  end: number,
-  moves: readonly { corner: number; point: Point }[],
-): boolean {
-  const a = quad[end];
-  const b = quad[(end + 1) % 4];
-  const along = { x: b.x - a.x, y: b.y - a.y };
-  const length = Math.hypot(along.x, along.y);
-  if (length < 1) return false;
-  let outward = { x: -along.y / length, y: along.x / length };
-  const centre = {
-    x: quad.reduce((sum, point) => sum + point.x, 0) / 4,
-    y: quad.reduce((sum, point) => sum + point.y, 0) / 4,
-  };
-  const middle = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  if (
-    outward.x * (middle.x - centre.x) + outward.y * (middle.y - centre.y) <
-    0
-  ) {
-    outward = { x: -outward.x, y: -outward.y };
-  }
-  return moves.every(({ corner, point }) => {
-    const before = quad[corner];
-    return (
-      (point.x - before.x) * outward.x + (point.y - before.y) * outward.y <= 1
-    );
-  });
-}
-
 // the keys' edge at this end, read from the picture: the mask's own end evidence covers
 // only part of the end, so a line through it would extrapolate wrongly to the far corner
 function endFromPixels(
@@ -1031,7 +970,6 @@ export function refineEnds(frame: Frame, quad: Point[]): Point[] {
     if (!line) {
       continue;
     }
-    const moves: { corner: number; point: Point }[] = [];
     for (const [corner, longEdge] of Object.entries(corners)) {
       const edge = longEdges[longEdge];
       const moved = intersection(line.c, line.d, edge.c, edge.d);
@@ -1040,11 +978,8 @@ export function refineEnds(frame: Frame, quad: Point[]): Point[] {
         moved &&
         Math.hypot(moved.x - quad[k].x, moved.y - quad[k].y) <= MAX_END_SHIFT_PX
       ) {
-        moves.push({ corner: k, point: moved });
+        out[k] = moved;
       }
-    }
-    if (moves.length === 2 && endMovesOnlyInward(quad, end, moves)) {
-      for (const { corner, point } of moves) out[corner] = point;
     }
   }
   return out;
@@ -1115,10 +1050,9 @@ export function fitRectangle(
     lastDecline = `one end drawn ${ratio.toFixed(1)}x the other`;
     return null;
   }
-  const ordered = orderLike(fitted, coarseQuad);
   return {
-    quad: frame ? refineEnds(frame, ordered) : ordered,
-    rectangle: ordered,
+    quad: frame ? refineEnds(frame, fitted) : fitted,
+    rectangle: fitted,
     cost: solution.cost,
     focal: solution.focal,
   };

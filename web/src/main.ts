@@ -2,11 +2,11 @@ import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import { calibrateBoard } from "./boardgeometry";
 import { type Calibration, type Corners, createCalibration } from "./calibrate";
 import { createDetector, type Detector, INPUT_SIZE } from "./detector";
-import { drawHands, drawModelInput, drawModelMask, drawQuad } from "./draw";
+import { drawHands, drawModelInput, drawQuad } from "./draw";
 import { createHandTracker, type HandTracker } from "./hands";
 import type { Point } from "./homography";
 import { createHud, type Hud } from "./hud";
-import { type Board, drawKeyMasks, keyPolygons } from "./keypolygons";
+import { type Board, drawKeyMasks } from "./keypolygons";
 import { createLab } from "./lab";
 import { lockKeybed } from "./lock";
 import { depthInKeyWidths, measureCorners } from "./measure";
@@ -24,12 +24,6 @@ const MISSES_BEFORE_CLEAR = 4;
 const DEPTH_KEY = "kvt.keybedDepthUnits.v2";
 const FOCAL_KEY = "kvt.cameraFocalFraction.v2";
 const SHOW_KEY_MASKS = new URLSearchParams(location.search).has("keymask");
-const SHOW_DEBUG_OVERLAY =
-  new URLSearchParams(location.search).has("debug") ||
-  new URLSearchParams(location.search).has("keydebug");
-const RAW_DEBUG_COLOR = "#fb7185";
-const LOCK_DEBUG_COLOR = "#fbbf24";
-const CALIBRATED_DEBUG_COLOR = "#34d399";
 
 // when a recording plays in place of the camera, every detection is kept on the window so
 // a lab session can read the pipeline's behaviour over time
@@ -60,8 +54,6 @@ interface Lock {
   onKeybed: boolean;
   margin: number;
   gray: Float32Array;
-  mask: Uint8Array;
-  maskSize: number;
 }
 
 function createVideo(): HTMLVideoElement {
@@ -95,68 +87,6 @@ function renderError(canvas: HTMLCanvasElement, message: string): void {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(message, canvas.width / 2, canvas.height / 2);
-}
-
-function drawDebugBlackCenters(
-  ctx: CanvasRenderingContext2D,
-  expectedQuad: Point[],
-  calibratedQuad: Point[] | null,
-  board: Board,
-  width: number,
-  height: number,
-): void {
-  const expected = keyPolygons(
-    expectedQuad.map((point) => ({
-      x: point.x * width,
-      y: point.y * height,
-    })),
-    board,
-  );
-  const calibrated = calibratedQuad
-    ? keyPolygons(
-        calibratedQuad.map((point) => ({
-          x: point.x * width,
-          y: point.y * height,
-        })),
-        board,
-      )
-    : [];
-  const calibratedByPitch = new Map(
-    calibrated
-      .filter((key) => key.black)
-      .map((key) => [key.pitch, key] as const),
-  );
-  ctx.lineWidth = 1.5;
-  for (const key of expected) {
-    if (!key.black) continue;
-    const expectedCenter = {
-      x: ((key.points[0]?.x ?? 0) + (key.points[2]?.x ?? 0)) / 2,
-      y: ((key.points[0]?.y ?? 0) + (key.points[2]?.y ?? 0)) / 2,
-    };
-    const calibratedKey = calibratedByPitch.get(key.pitch);
-    const calibratedCenter = calibratedKey
-      ? {
-          x:
-            ((calibratedKey.points[0]?.x ?? 0) +
-              (calibratedKey.points[2]?.x ?? 0)) /
-            2,
-          y:
-            ((calibratedKey.points[0]?.y ?? 0) +
-              (calibratedKey.points[2]?.y ?? 0)) /
-            2,
-        }
-      : null;
-    ctx.strokeStyle = RAW_DEBUG_COLOR;
-    ctx.beginPath();
-    ctx.arc(expectedCenter.x, expectedCenter.y, 3, 0, Math.PI * 2);
-    ctx.stroke();
-    if (calibratedCenter) {
-      ctx.strokeStyle = CALIBRATED_DEBUG_COLOR;
-      ctx.beginPath();
-      ctx.arc(calibratedCenter.x, calibratedCenter.y, 3, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-  }
 }
 
 function errorMessage(err: unknown): string {
@@ -220,7 +150,6 @@ function startLoop(
   let board: Board | null = null;
   let boardQuad: Point[] | null = null;
   let boardProposal: Point[] | null = null;
-  let rawQuad: Point[] | null = null;
   let lastBoardReadAt = -Infinity;
   let lastDetectionStill = false;
 
@@ -251,7 +180,6 @@ function startLoop(
             note: "no keybed",
           });
           lock = null;
-          rawQuad = null;
           clearBoard();
           lastDetectionStill = false;
           steady.reset();
@@ -267,7 +195,6 @@ function startLoop(
           height: video.videoHeight,
         });
         if (!held.held) {
-          rawQuad = null;
           lastDetectionStill = false;
           labLog({
             t: performance.now(),
@@ -290,7 +217,6 @@ function startLoop(
           return;
         }
         const framed = held.quad;
-        rawQuad = framed.map((point) => ({ ...point }));
         const proposal = boardProposal;
         if (
           proposal &&
@@ -315,8 +241,6 @@ function startLoop(
           onKeybed: facts.onKeybed,
           margin: facts.margin,
           gray: detection.gray,
-          mask: detection.mask,
-          maskSize: detection.maskSize,
         };
         labLog({
           t: performance.now(),
@@ -352,7 +276,6 @@ function startLoop(
   };
 
   hud.onRedetect(() => {
-    rawQuad = null;
     clearBoard();
     lastDetectionStill = false;
     detect(performance.now());
@@ -473,9 +396,6 @@ function startLoop(
     ctx.save();
     ctx.translate(box.x, box.y);
     if (lock) {
-      if (SHOW_DEBUG_OVERLAY) {
-        drawModelMask(ctx, lock.mask, lock.maskSize, box.w, box.h);
-      }
       drawQuad(
         ctx,
         board && boardQuad ? boardQuad : lock.quad,
@@ -486,23 +406,6 @@ function startLoop(
       );
       if (SHOW_KEY_MASKS && board && boardQuad) {
         drawKeyMasks(ctx, boardQuad, board, box.w, box.h);
-      }
-      if (SHOW_DEBUG_OVERLAY) {
-        if (rawQuad) {
-          drawQuad(ctx, rawQuad, box.w, box.h, RAW_DEBUG_COLOR, "proposal");
-        }
-        drawQuad(ctx, lock.quad, box.w, box.h, LOCK_DEBUG_COLOR, "lock");
-        if (board && boardQuad) {
-          drawQuad(
-            ctx,
-            boardQuad,
-            box.w,
-            box.h,
-            CALIBRATED_DEBUG_COLOR,
-            "calibrated",
-          );
-          drawDebugBlackCenters(ctx, lock.quad, boardQuad, board, box.w, box.h);
-        }
       }
     }
     if (hud.state.corners) {

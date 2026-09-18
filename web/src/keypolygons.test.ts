@@ -26,33 +26,4 @@ describe("keyPolygons", () => {
     expect(keys[0]?.points[0]).toEqual({ x: 0, y: 0 });
     expect(keys[87]?.points[2]).toEqual({ x: 1, y: 1 });
   });
-
-  it("uses a local black-key geometry when one is available", () => {
-    const keys = keyPolygons(
-      [
-        { x: 0, y: 0 },
-        { x: 1, y: 0 },
-        { x: 1, y: 1 },
-        { x: 0, y: 1 },
-      ],
-      {
-        lowest: 21,
-        highest: 24,
-        origin: keyUnits(21).from,
-        span: 4,
-        blackDepth: 0.62,
-        blackKeys: [
-          { pitch: 22, u0: 0.21, u1: 0.33, depth: 0.41, confidence: 1 },
-        ],
-      },
-    );
-
-    const black = keys.find((key) => key.pitch === 22);
-    expect(black?.points).toEqual([
-      { x: 0.21, y: 0 },
-      { x: 0.33, y: 0 },
-      { x: 0.33, y: 0.41 },
-      { x: 0.21, y: 0.41 },
-    ]);
-  });
 });

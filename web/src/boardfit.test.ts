@@ -59,18 +59,6 @@ function scene(fov: number, azimuth: number, lowest: number, highest: number) {
   return { pixels, quad, span, origin };
 }
 
-function segmentParameter(
-  point: { x: number; y: number },
-  start: { x: number; y: number },
-  end: { x: number; y: number },
-): number {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  return (
-    ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)
-  );
-}
-
 describe("synthetic calibration across camera intrinsics", () => {
   it("supports the generator's 96-key F0 through E8 range", () => {
     const rendered = scene(45, 0, 17, 112);
@@ -144,32 +132,6 @@ describe("synthetic calibration across camera intrinsics", () => {
           }),
         );
         expect(worst).toBeLessThan(4);
-        const leftRear = segmentParameter(
-          fit?.quad[0] ?? proposal[0],
-          proposal[0],
-          proposal[3],
-        );
-        const rightRear = segmentParameter(
-          fit?.quad[1] ?? proposal[1],
-          proposal[1],
-          proposal[2],
-        );
-        const rightFront = segmentParameter(
-          fit?.quad[2] ?? proposal[2],
-          proposal[2],
-          proposal[1],
-        );
-        const leftFront = segmentParameter(
-          fit?.quad[3] ?? proposal[3],
-          proposal[3],
-          proposal[0],
-        );
-        expect(
-          Math.min(leftRear, rightRear, rightFront, leftFront),
-        ).toBeGreaterThanOrEqual(0);
-        expect(
-          Math.max(leftRear, rightRear, rightFront, leftFront),
-        ).toBeLessThanOrEqual(1);
       });
     }
   }

@@ -105,7 +105,6 @@ export function drawQuad(
 }
 
 let scratchCanvas: HTMLCanvasElement | null = null;
-let maskScratchCanvas: HTMLCanvasElement | null = null;
 
 // allocating a canvas per frame is what made the overlay stutter, so keep one around
 function modelInputScratch(size: number): CanvasRenderingContext2D | null {
@@ -117,39 +116,6 @@ function modelInputScratch(size: number): CanvasRenderingContext2D | null {
     scratchCanvas.height = size;
   }
   return scratchCanvas.getContext("2d");
-}
-
-function modelMaskScratch(size: number): CanvasRenderingContext2D | null {
-  if (!maskScratchCanvas) {
-    maskScratchCanvas = document.createElement("canvas");
-  }
-  if (maskScratchCanvas.width !== size) {
-    maskScratchCanvas.width = size;
-    maskScratchCanvas.height = size;
-  }
-  return maskScratchCanvas.getContext("2d");
-}
-
-export function drawModelMask(
-  ctx: CanvasRenderingContext2D,
-  mask: Uint8Array,
-  size: number,
-  width: number,
-  height: number,
-): void {
-  const scratchCtx = modelMaskScratch(size);
-  if (!scratchCtx) return;
-  const image = scratchCtx.createImageData(size, size);
-  for (let index = 0; index < mask.length; index += 1) {
-    if (mask[index] === 0) continue;
-    const at = index * 4;
-    image.data[at] = 20;
-    image.data[at + 1] = 184;
-    image.data[at + 2] = 166;
-    image.data[at + 3] = 112;
-  }
-  scratchCtx.putImageData(image, 0, 0);
-  ctx.drawImage(scratchCtx.canvas, 0, 0, width, height);
 }
 
 export function drawModelInput(
