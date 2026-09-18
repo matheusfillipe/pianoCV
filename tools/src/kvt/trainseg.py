@@ -121,6 +121,7 @@ def train_seg(
 ) -> tuple[KeybedSegNet, float]:
     torch.manual_seed(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"training device {device}", flush=True)
     model = KeybedSegNet().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=_LEARNING_RATE)
     steps = math.ceil(train_samples / batch_size) * epochs
