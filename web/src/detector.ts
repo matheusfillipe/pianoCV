@@ -29,7 +29,7 @@ declare global {
 }
 
 export const INPUT_SIZE = 288;
-export const MODEL_URL = "/keybed_seg2.onnx?revision=published";
+export const MODEL_URL = "/keybed_seg2.onnx";
 // the backbone is ImageNet pretrained, so it wants rgb on those statistics rather than grey
 const MEAN = [0.485, 0.456, 0.406];
 const STD = [0.229, 0.224, 0.225];
