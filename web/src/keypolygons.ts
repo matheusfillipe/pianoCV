@@ -7,12 +7,21 @@ export interface KeyPolygon {
   points: Point[];
 }
 
+export interface BlackKeyGeometry {
+  pitch: number;
+  u0: number;
+  u1: number;
+  depth: number;
+  confidence: number;
+}
+
 export interface Board {
   lowest: number;
   highest: number;
   origin: number;
   span: number;
   blackDepth: number;
+  blackKeys?: readonly BlackKeyGeometry[];
 }
 
 const UNIT_SQUARE: Point[] = [
@@ -33,15 +42,18 @@ export function keyPolygons(
     const u0 = Math.max(0, (units.from - board.origin) / board.span);
     const u1 = Math.min(1, (units.to - board.origin) / board.span);
     if (u1 <= u0) continue;
-    const v1 = isBlack(pitch) ? board.blackDepth : 1;
+    const local = board.blackKeys?.find((key) => key.pitch === pitch);
+    const left = local?.u0 ?? u0;
+    const right = local?.u1 ?? u1;
+    const v1 = isBlack(pitch) ? (local?.depth ?? board.blackDepth) : 1;
     polygons.push({
       pitch,
       black: isBlack(pitch),
       points: [
-        applyHomography(homography, u0, 0),
-        applyHomography(homography, u1, 0),
-        applyHomography(homography, u1, v1),
-        applyHomography(homography, u0, v1),
+        applyHomography(homography, isBlack(pitch) ? left : u0, 0),
+        applyHomography(homography, isBlack(pitch) ? right : u1, 0),
+        applyHomography(homography, isBlack(pitch) ? right : u1, v1),
+        applyHomography(homography, isBlack(pitch) ? left : u0, v1),
       ],
     });
   }

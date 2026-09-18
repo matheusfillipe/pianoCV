@@ -1,5 +1,5 @@
 import { applyHomography, findHomography, type Point } from "./homography";
-import type { Board } from "./keypolygons";
+import type { BlackKeyGeometry, Board } from "./keypolygons";
 import { isBlack, keyUnits } from "./keys";
 
 const SAMPLES = 360;
@@ -15,6 +15,10 @@ const MIN_BLACK_DEPTH = 0.32;
 const MAX_BLACK_DEPTH = 0.82;
 const BLACK_DEPTH_STEP = 0.01;
 const BLACK_EDGE_PROBE = 0.025;
+const LOCAL_BLACK_EDGE = 0.035;
+const LOCAL_BLACK_MIN_SCORE = 18;
+const LOCAL_BLACK_OFFSETS = [-0.06, -0.04, -0.02, 0, 0.02, 0.04, 0.06];
+const LOCAL_BLACK_WIDTHS = [0.82, 0.91, 1, 1.09, 1.18];
 const OCTAVE_STEPS = 100;
 const OCTAVE_WIDE = 7 * OCTAVE_STEPS;
 const UNIT_SQUARE: Point[] = [
@@ -292,6 +296,112 @@ function fitBlackDepth(
   return bestContrast >= 12 ? bestDepth : DEFAULT_BLACK_DEPTH;
 }
 
+function localBlackScore(
+  pixels: ImageData,
+  homography: number[],
+  u0: number,
+  u1: number,
+  depth: number,
+): number | null {
+  const centre = (u0 + u1) / 2;
+  const inside = brightness(
+    pixels,
+    applyHomography(homography, centre, depth * 0.65),
+  );
+  const left = brightness(
+    pixels,
+    applyHomography(homography, u0 - LOCAL_BLACK_EDGE, depth * 0.65),
+  );
+  const right = brightness(
+    pixels,
+    applyHomography(homography, u1 + LOCAL_BLACK_EDGE, depth * 0.65),
+  );
+  const before = brightness(
+    pixels,
+    applyHomography(homography, centre, depth - BLACK_EDGE_PROBE),
+  );
+  const after = brightness(
+    pixels,
+    applyHomography(homography, centre, depth + BLACK_EDGE_PROBE),
+  );
+  if (inside === null || left === null || right === null) return null;
+  const sides = (left + right) / 2 - inside;
+  const front = before !== null && after !== null ? after - before : 0;
+  return sides + front;
+}
+
+function fitBlackKeys(
+  pixels: ImageData,
+  homography: number[],
+  board: Board,
+  fallbackDepth: number,
+): BlackKeyGeometry[] {
+  const fitted: BlackKeyGeometry[] = [];
+  let previousU1 = -Infinity;
+  for (let pitch = board.lowest; pitch <= board.highest; pitch += 1) {
+    if (!isBlack(pitch)) continue;
+    const units = keyUnits(pitch);
+    const expectedU0 = (units.from - board.origin) / board.span;
+    const expectedU1 = (units.to - board.origin) / board.span;
+    const expectedWidth = expectedU1 - expectedU0;
+    let best: {
+      readonly u0: number;
+      readonly u1: number;
+      readonly depth: number;
+      readonly score: number;
+    } | null = null;
+    for (const offset of LOCAL_BLACK_OFFSETS) {
+      for (const widthScale of LOCAL_BLACK_WIDTHS) {
+        const width = expectedWidth * widthScale;
+        const centre = (expectedU0 + expectedU1) / 2 + offset / board.span;
+        const u0 = Math.max(0.01, centre - width / 2);
+        const u1 = Math.min(0.99, centre + width / 2);
+        if (u1 <= u0) continue;
+        for (
+          let depth = MIN_BLACK_DEPTH;
+          depth <= MAX_BLACK_DEPTH;
+          depth += BLACK_DEPTH_STEP * 4
+        ) {
+          const evidence = localBlackScore(pixels, homography, u0, u1, depth);
+          if (evidence === null) continue;
+          const prior = Math.abs(widthScale - 1) * 8;
+          const score = evidence - prior;
+          if (best === null || score > best.score) {
+            best = { u0, u1, depth, score };
+          }
+        }
+      }
+    }
+    const candidate = best;
+    const usable =
+      candidate !== null && candidate.score >= LOCAL_BLACK_MIN_SCORE;
+    let u0 = usable && candidate !== null ? candidate.u0 : expectedU0;
+    let u1 = usable && candidate !== null ? candidate.u1 : expectedU1;
+    const depth =
+      usable && candidate !== null ? candidate.depth : fallbackDepth;
+    const minimumGap = expectedWidth * 0.18;
+    if (u0 <= previousU1 + minimumGap) {
+      const shift = previousU1 + minimumGap - u0;
+      u0 += shift;
+      u1 += shift;
+    }
+    if (u1 > 1 || u1 <= u0) {
+      u0 = expectedU0;
+      u1 = expectedU1;
+    }
+    fitted.push({
+      pitch,
+      u0,
+      u1,
+      depth,
+      confidence:
+        usable && candidate !== null ? Math.min(1, candidate.score / 180) : 0,
+    });
+    previousU1 = u1;
+  }
+  return fitted;
+}
+
 export function fitBoard(
   pixels: ImageData,
   quad: readonly Point[],
@@ -325,5 +435,10 @@ export function fitBoard(
     span: best.shape.whites,
     blackDepth: DEFAULT_BLACK_DEPTH,
   };
-  return { ...fitted, blackDepth: fitBlackDepth(pixels, homography, fitted) };
+  const blackDepth = fitBlackDepth(pixels, homography, fitted);
+  return {
+    ...fitted,
+    blackDepth,
+    blackKeys: fitBlackKeys(pixels, homography, fitted, blackDepth),
+  };
 }
