@@ -1,5 +1,10 @@
 import { fitBoard } from "./boardfit";
-import { applyHomography, findHomography, type Point } from "./homography";
+import {
+  applyHomography,
+  findHomography,
+  type Homography,
+  type Point,
+} from "./homography";
 import type { Board } from "./keypolygons";
 import { isBlack, keyUnits } from "./keys";
 
@@ -9,6 +14,12 @@ const unit = [
   { x: 1, y: 1 },
   { x: 0, y: 1 },
 ];
+
+// Edge evidence is allowed to pull the segmentation proposal slightly into
+// the keybed, but it must never grow the mapped board into the surrounding
+// instrument. Keeping this in normalized board space also makes the limit
+// independent of camera resolution and focal length.
+const MAX_INWARD_EDGE_SHIFT = 0.4;
 
 function fullyInFrame(image: ImageData, quad: readonly Point[]): boolean {
   return (
@@ -141,6 +152,27 @@ function validQuad(
   });
 }
 
+function keepEdgesInsideProposal(
+  candidate: readonly Point[],
+  proposalToImage: Homography,
+): Point[] {
+  const imageToProposal = findHomography(
+    unit.map((point) => applyHomography(proposalToImage, point.x, point.y)),
+    unit,
+  );
+  return candidate.map((point, index) => {
+    const normalized = applyHomography(imageToProposal, point.x, point.y);
+    const rear = index === 0 || index === 1;
+    const left = index === 0 || index === 3;
+    const minimum = rear ? 0 : 1 - MAX_INWARD_EDGE_SHIFT;
+    const maximum = rear ? MAX_INWARD_EDGE_SHIFT : 1;
+    const v = Math.max(minimum, Math.min(maximum, normalized.y));
+    // This stage refines only the front and rear boundaries. Its intersections must stay on
+    // the detector's two side segments, otherwise a panel edge can widen the keyboard.
+    return applyHomography(proposalToImage, left ? 0 : 1, v);
+  });
+}
+
 function edge(
   points: readonly Point[],
   left: readonly [Point, Point],
@@ -263,7 +295,8 @@ export function refineBoardEdges(
     near?.[1] ?? quad[2],
     near?.[0] ?? quad[3],
   ];
-  return validQuad(candidate, quad) ? candidate : [...quad];
+  const bounded = keepEdgesInsideProposal(candidate, h);
+  return validQuad(bounded, quad) ? bounded : [...quad];
 }
 
 export function calibrateBoard(

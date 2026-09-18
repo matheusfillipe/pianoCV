@@ -66,6 +66,7 @@ describe("synthetic calibration across camera intrinsics", () => {
     expect(board?.lowest).toBe(17);
     expect(board?.highest).toBe(112);
     expect(board?.span).toBeCloseTo(56, 0);
+    expect(board?.blackKeys?.length).toBeGreaterThan(0);
   });
   it("corrects a rear edge that expands into the body at one end", () => {
     const rendered = scene(45, 60, 36, 96);
@@ -88,6 +89,33 @@ describe("synthetic calibration across camera intrinsics", () => {
         ),
       ).toBeLessThan(3);
     }
+  });
+  it("never expands the front edge into a bright control-panel band", () => {
+    const rendered = scene(45, 60, 36, 96);
+    const imageToUnit = findHomography(rendered.quad, unit);
+    const data = new Uint8ClampedArray(rendered.pixels.data);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const p = applyHomography(imageToUnit, x, y);
+        if (p.y > 1 && p.y < 1.16) {
+          const at = (y * width + x) * 4;
+          data[at] = 220;
+          data[at + 1] = 220;
+          data[at + 2] = 220;
+        }
+      }
+    }
+    const fit = calibrateBoard(
+      { ...rendered.pixels, data },
+      rendered.quad,
+    );
+    expect(fit).not.toBeNull();
+    if (!fit) throw new Error("calibration unexpectedly failed");
+    expect(
+      fit.quad.slice(2).every((point) => {
+        return applyHomography(imageToUnit, point.x, point.y).y <= 1;
+      }),
+    ).toBe(true);
   });
   it("declines a cropped keybed instead of stretching a partial stripe", () => {
     const rendered = scene(45, 0, 36, 96);

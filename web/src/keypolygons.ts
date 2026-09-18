@@ -7,12 +7,22 @@ export interface KeyPolygon {
   points: Point[];
 }
 
+export interface BlackKeyGeometry {
+  pitch: number;
+  u0: number;
+  u1: number;
+  depth: number;
+  confidence: number;
+}
+
 export interface Board {
   lowest: number;
   highest: number;
   origin: number;
   span: number;
   blackDepth: number;
+  /** Optional image-measured overrides, in the board's normalized coordinates. */
+  blackKeys?: readonly BlackKeyGeometry[];
 }
 
 const UNIT_SQUARE: Point[] = [
@@ -30,10 +40,14 @@ export function keyPolygons(
   const polygons: KeyPolygon[] = [];
   for (let pitch = board.lowest; pitch <= board.highest; pitch += 1) {
     const units = keyUnits(pitch);
-    const u0 = Math.max(0, (units.from - board.origin) / board.span);
-    const u1 = Math.min(1, (units.to - board.origin) / board.span);
+    const local = isBlack(pitch)
+      ? board.blackKeys?.find((key) => key.pitch === pitch)
+      : undefined;
+    const u0 =
+      local?.u0 ?? Math.max(0, (units.from - board.origin) / board.span);
+    const u1 = local?.u1 ?? Math.min(1, (units.to - board.origin) / board.span);
     if (u1 <= u0) continue;
-    const v1 = isBlack(pitch) ? board.blackDepth : 1;
+    const v1 = local?.depth ?? (isBlack(pitch) ? board.blackDepth : 1);
     polygons.push({
       pitch,
       black: isBlack(pitch),

@@ -1,5 +1,5 @@
 import { applyHomography, findHomography, type Point } from "./homography";
-import type { Board } from "./keypolygons";
+import type { BlackKeyGeometry, Board } from "./keypolygons";
 import { isBlack, keyUnits } from "./keys";
 
 const SAMPLES = 360;
@@ -15,6 +15,9 @@ const MIN_BLACK_DEPTH = 0.32;
 const MAX_BLACK_DEPTH = 0.82;
 const BLACK_DEPTH_STEP = 0.01;
 const BLACK_EDGE_PROBE = 0.025;
+const LOCAL_BLACK_SAMPLES = 25;
+const LOCAL_BLACK_THRESHOLD = 32;
+const LOCAL_MIN_CONFIDENCE = 0.55;
 const OCTAVE_STEPS = 100;
 const OCTAVE_WIDE = 7 * OCTAVE_STEPS;
 const UNIT_SQUARE: Point[] = [
@@ -292,6 +295,101 @@ function fitBlackDepth(
   return bestContrast >= 12 ? bestDepth : DEFAULT_BLACK_DEPTH;
 }
 
+function fitLocalBlackKeys(
+  pixels: ImageData,
+  homography: number[],
+  board: Board,
+): readonly BlackKeyGeometry[] | undefined {
+  const candidates: BlackKeyGeometry[] = [];
+  const blackPitches = Array.from(
+    { length: board.highest - board.lowest + 1 },
+    (_, index) => board.lowest + index,
+  ).filter(isBlack);
+
+  for (const pitch of blackPitches) {
+    const units = keyUnits(pitch);
+    const expected0 = (units.from - board.origin) / board.span;
+    const expected1 = (units.to - board.origin) / board.span;
+    const expectedCenter = (expected0 + expected1) / 2;
+    const searchHalfWidth = 0.5 / board.span;
+    const from = Math.max(0, expectedCenter - searchHalfWidth);
+    const to = Math.min(1, expectedCenter + searchHalfWidth);
+    const values = Array.from({ length: LOCAL_BLACK_SAMPLES }, (_, index) => {
+      const u = from + ((index + 0.5) / LOCAL_BLACK_SAMPLES) * (to - from);
+      return brightness(pixels, applyHomography(homography, u, 0.38));
+    });
+    const readable = values.flatMap((value) => (value === null ? [] : [value]));
+    if (readable.length < LOCAL_BLACK_SAMPLES * 0.7) return undefined;
+    const outside: number[] = [
+      values[0] ?? null,
+      values[1] ?? null,
+      values.at(-2) ?? null,
+      values.at(-1) ?? null,
+    ].flatMap((value) => (value === null ? [] : [value]));
+    const background = median(outside);
+    if (background === null) return undefined;
+    const dark = values.map(
+      (value) => value !== null && value < background - LOCAL_BLACK_THRESHOLD,
+    );
+    const expectedIndex = Math.round(
+      ((expectedCenter - from) / (to - from)) * LOCAL_BLACK_SAMPLES,
+    );
+    let left = expectedIndex;
+    let right = expectedIndex;
+    while (left > 0 && dark[left - 1]) left -= 1;
+    while (right < LOCAL_BLACK_SAMPLES - 1 && dark[right + 1]) right += 1;
+    const darkCount = right - left + 1;
+    const contrast =
+      readable.reduce(
+        (sum, value) => sum + Math.max(0, background - value),
+        0,
+      ) / readable.length;
+    const confidence = Math.min(
+      1,
+      (contrast / 90) * Math.min(1, darkCount / 5),
+    );
+    if (confidence < LOCAL_MIN_CONFIDENCE || !dark[expectedIndex]) {
+      return undefined;
+    }
+
+    const u0 = from + (left / LOCAL_BLACK_SAMPLES) * (to - from);
+    const u1 = from + ((right + 1) / LOCAL_BLACK_SAMPLES) * (to - from);
+    const depthValues = Array.from(
+      { length: LOCAL_BLACK_SAMPLES },
+      (_, index) => {
+        const v = (index + 0.5) / LOCAL_BLACK_SAMPLES;
+        return brightness(
+          pixels,
+          applyHomography(homography, expectedCenter, v),
+        );
+      },
+    );
+    const depthDark = depthValues.map(
+      (value) => value !== null && value < background - LOCAL_BLACK_THRESHOLD,
+    );
+    let lastDark = 0;
+    while (lastDark < depthDark.length && depthDark[lastDark]) lastDark += 1;
+    const depth = Math.max(
+      0.32,
+      Math.min(0.82, lastDark / LOCAL_BLACK_SAMPLES),
+    );
+    candidates.push({ pitch, u0, u1, depth, confidence });
+  }
+
+  for (let index = 1; index < candidates.length; index += 1) {
+    const previous = candidates[index - 1];
+    const current = candidates[index];
+    if (
+      previous === undefined ||
+      current === undefined ||
+      previous.u1 > current.u0
+    ) {
+      return undefined;
+    }
+  }
+  return candidates.length === 0 ? undefined : candidates;
+}
+
 export function fitBoard(
   pixels: ImageData,
   quad: readonly Point[],
@@ -325,5 +423,12 @@ export function fitBoard(
     span: best.shape.whites,
     blackDepth: DEFAULT_BLACK_DEPTH,
   };
-  return { ...fitted, blackDepth: fitBlackDepth(pixels, homography, fitted) };
+  const boardWithDepth = {
+    ...fitted,
+    blackDepth: fitBlackDepth(pixels, homography, fitted),
+  };
+  return {
+    ...boardWithDepth,
+    blackKeys: fitLocalBlackKeys(pixels, homography, boardWithDepth),
+  };
 }
