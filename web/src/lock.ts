@@ -14,6 +14,7 @@ export type Lock =
        * back edge and 3 to 2 along the edge the player stands at. */
       readonly quad: Point[];
       readonly inputQuad: Point[];
+      readonly proposalQuad: Point[] | null;
       readonly margin: number;
     }
   | { readonly held: false; readonly reason: string };
@@ -29,6 +30,7 @@ function turnedIfReversed(detection: Detection): {
   margin: number;
   onKeybed: boolean;
   inputQuad: Point[];
+  proposalQuad: Point[] | null;
 } {
   const source = detection.inputQuad ?? detection.quad ?? [];
   const asDetected = facing(detection.gray, INPUT_SIZE, source);
@@ -47,6 +49,7 @@ function turnedIfReversed(detection: Detection): {
     margin: facts.margin,
     onKeybed: facts.onKeybed,
     inputQuad: facts.quad,
+    proposalQuad: detection.proposalQuad,
   };
 }
 
@@ -92,6 +95,7 @@ export function lockKeybed(
     held: true,
     quad: framed.quad,
     inputQuad: framed.inputQuad,
+    proposalQuad: detection.proposalQuad,
     margin: framed.margin,
   };
 }

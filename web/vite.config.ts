@@ -11,6 +11,8 @@ export default defineConfig({
         main: resolve(import.meta.dirname, "index.html"),
         gen: resolve(import.meta.dirname, "gen.html"),
         hands: resolve(import.meta.dirname, "hands.html"),
+        eval: resolve(import.meta.dirname, "eval.html"),
+        gridEval: resolve(import.meta.dirname, "grid-eval.html"),
       },
     },
   },

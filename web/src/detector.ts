@@ -103,6 +103,8 @@ function sourceSize(frame: CanvasImageSource): {
 
 export interface Detection {
   quad: Point[] | null;
+  // largest-mask-blob quad after image-edge snapping, before the rectangle prior
+  proposalQuad: Point[] | null;
   // median per-pixel change since the last detection, and whether that counted as still
   motion: number;
   still: boolean;
@@ -425,6 +427,12 @@ export async function createDetector(
         // the mask grid is square while the frame is not, so corners come back in frame fractions
         quad: constrained
           ? constrained.map((p) => ({
+              x: p.x / refineWidth,
+              y: p.y / refineHeight,
+            }))
+          : null,
+        proposalQuad: refined
+          ? refined.map((p) => ({
               x: p.x / refineWidth,
               y: p.y / refineHeight,
             }))

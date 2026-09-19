@@ -49,6 +49,7 @@ function labLog(record: LabRecord): void {
 interface Lock {
   quad: Point[];
   inputQuad: Point[];
+  proposalQuad: Point[] | null;
   latencyMs: number;
   onKeybed: boolean;
   margin: number;
@@ -236,6 +237,7 @@ function startLoop(
         lock = {
           quad: steady.accept(framed, detection.still),
           inputQuad: facts.quad,
+          proposalQuad: held.proposalQuad,
           latencyMs: detection.latencyMs,
           onKeybed: facts.onKeybed,
           margin: facts.margin,
@@ -378,7 +380,9 @@ function startLoop(
         })),
       );
       board = fitted?.board ?? null;
-      boardProposal = fitted ? lock.quad.map((point) => ({ ...point })) : null;
+      boardProposal = fitted
+        ? (lock.proposalQuad ?? lock.quad).map((point) => ({ ...point }))
+        : null;
       boardQuad =
         fitted?.quad.map((point) => ({
           x: (point.x - box.x) / box.w,
@@ -402,7 +406,7 @@ function startLoop(
           box.w,
           box.h,
           "#fb923c",
-          "Seg2 proposal",
+          "raw mask proposal",
         );
       }
       drawQuad(

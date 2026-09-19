@@ -5,8 +5,8 @@ import type { Plugin } from "vite";
 
 const ROUTE =
   /^\/lab\/save\/(?:(synth|grid|key-instances|evaluations)\/)?([^/]+)$/;
-const LIST_ROUTE = /^\/lab\/list\/(key-instances)$/;
-const DATA_ROUTE = /^\/lab\/data\/(key-instances)\/([^/?]+)$/;
+const LIST_ROUTE = /^\/lab\/list\/(key-instances|grid)$/;
+const DATA_ROUTE = /^\/lab\/data\/(key-instances|grid)\/([^/?]+)$/;
 const CLIP_ROUTE = /^\/lab\/clip\/([^/?]+)$/;
 const DIRS: Record<string, string> = {
   recordings: "recordings",

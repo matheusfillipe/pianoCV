@@ -12,7 +12,7 @@ KAGGLE_SEG2_OUTPUT_DIR ?= data/models/kaggle-keybed-seg2-real
         lab-key-instances-kaggle-push lab-key-instances-kaggle-version lab-key-instances-kaggle-run \
         lab-key-instances-kaggle-output lab-key-instances-kaggle-evaluate \
         lab-seg2-kaggle-run lab-seg2-kaggle-output \
-        lab-calibration-eval \
+        lab-calibration-eval lab-browser-gridtest \
         tools-fix tools-lock tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
         build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export lab-evaluate lab-real-seg2-prepare
@@ -132,6 +132,9 @@ lab-gridtest: ## score the detector per pose on the deterministic render grid (d
 
 lab-calibration-eval: ## run a bounded headless browser calibration evaluation (data/evaluations)
 	cd web && bun eval-runner.mjs
+
+lab-browser-gridtest: ## run the served browser ONNX model over the deterministic 3D grid
+	cd web && bun grid-eval-runner.mjs
 
 lab-corpus-bake: ## bake data/synth down to the net's input size (data/corpus)
 	cd tools && uv run python -m kvt.bake
