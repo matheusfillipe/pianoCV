@@ -23,6 +23,7 @@ export declare function boxAverage(gray: Float32Array, out: Float32Array): void;
 export declare function medianChange(a: Float32Array, b: Float32Array, scratch: Float32Array): number;
 export interface Detection {
     quad: Point[] | null;
+    proposalQuad: Point[] | null;
     motion: number;
     still: boolean;
     inputQuad: Point[] | null;
@@ -35,5 +36,6 @@ export interface Detection {
 }
 export interface Detector {
     detect(frame: CanvasImageSource): Promise<Detection>;
+    reset(): void;
 }
 export declare function createDetector(assets: RuntimeAssets, url?: string): Promise<Detector>;

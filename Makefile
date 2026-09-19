@@ -5,7 +5,7 @@ KAGGLE_SEG2_OUTPUT_DIR ?= data/models/kaggle-keybed-seg2-real
 
 .DEFAULT_GOAL := help
 .PHONY: help install fix precommit check list-lab-data lab-extract lab-train lab-detect \
-        lab-seg2-kaggle-run lab-seg2-kaggle-output \
+        lab-seg2-kaggle-run lab-seg2-kaggle-output lab-browser-gridtest \
         tools-fix tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
         build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export lab-evaluate lab-real-seg2-prepare
@@ -119,6 +119,9 @@ lab-jitter: ## measure how much the detection moves on static recordings
 
 lab-gridtest: ## score the detector per pose on the deterministic render grid (data/grid)
 	cd tools && uv run python -m kvt.gridtest $(ARGS)
+
+lab-browser-gridtest: ## run the served browser ONNX model over the deterministic 3D grid
+	cd web && bun grid-eval-runner.mjs
 
 lab-corpus-bake: ## bake data/synth down to the net's input size (data/corpus)
 	cd tools && uv run python -m kvt.bake

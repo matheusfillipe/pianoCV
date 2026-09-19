@@ -103,6 +103,8 @@ function sourceSize(frame: CanvasImageSource): {
 
 export interface Detection {
   quad: Point[] | null;
+  // the quad straight from the mask fit, before the rectangle prior narrows it further
+  proposalQuad: Point[] | null;
   // median per-pixel change since the last detection, and whether that counted as still
   motion: number;
   still: boolean;
@@ -119,6 +121,7 @@ export interface Detection {
 
 export interface Detector {
   detect(frame: CanvasImageSource): Promise<Detection>;
+  reset(): void;
 }
 
 function grayscale(
@@ -327,6 +330,15 @@ export async function createDetector(
   };
 
   return {
+    reset: () => {
+      previousFit = null;
+      havePrevious = false;
+      recent.length = 0;
+      averaged.fill(0);
+      probability.fill(0);
+      steadyGray = new Float32Array(0);
+      steadyCount = 0;
+    },
     detect: async (frame) => {
       // canvas bilinear aliases a 4x downscale badly and the key pattern is exactly that fine,
       // so ask the browser for a properly filtered resample the way cv2 INTER_AREA does
@@ -425,6 +437,12 @@ export async function createDetector(
         // the mask grid is square while the frame is not, so corners come back in frame fractions
         quad: constrained
           ? constrained.map((p) => ({
+              x: p.x / refineWidth,
+              y: p.y / refineHeight,
+            }))
+          : null,
+        proposalQuad: refined
+          ? refined.map((p) => ({
               x: p.x / refineWidth,
               y: p.y / refineHeight,
             }))

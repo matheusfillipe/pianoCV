@@ -1,14 +1,17 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 
-const ROUTE = /^\/lab\/save\/(?:(synth|grid)\/)?([^/]+)$/;
+const ROUTE = /^\/lab\/save\/(?:(synth|grid|evaluations)\/)?([^/]+)$/;
+const LIST_ROUTE = /^\/lab\/list\/(grid)$/;
+const DATA_ROUTE = /^\/lab\/data\/(grid)\/([^/?]+)$/;
 const CLIP_ROUTE = /^\/lab\/clip\/([^/?]+)$/;
 const DIRS: Record<string, string> = {
   recordings: "recordings",
   synth: "synth",
   grid: "grid",
+  evaluations: "evaluations",
 };
 const UNSAFE_NAME = /[^a-zA-Z0-9._-]/g;
 
@@ -19,6 +22,41 @@ export function labServer(): Plugin {
     apply: "serve",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
+        const list = LIST_ROUTE.exec(req.url ?? "");
+        if (req.method === "GET" && list) {
+          const directory = join(dataDir, DIRS[list[1]]);
+          readdir(directory)
+            .then((entries) => {
+              res.setHeader("content-type", "application/json");
+              res.end(
+                JSON.stringify(
+                  entries.filter((entry) => entry.endsWith(".json")),
+                ),
+              );
+            })
+            .catch(() => {
+              res.statusCode = 404;
+              res.end();
+            });
+          return;
+        }
+        const data = DATA_ROUTE.exec(req.url ?? "");
+        if (req.method === "GET" && data) {
+          const name = data[2].replace(UNSAFE_NAME, "");
+          readFile(join(dataDir, DIRS[data[1]], name))
+            .then((body) => {
+              res.setHeader(
+                "content-type",
+                name.endsWith(".json") ? "application/json" : "image/png",
+              );
+              res.end(body);
+            })
+            .catch(() => {
+              res.statusCode = 404;
+              res.end();
+            });
+          return;
+        }
         const clip = CLIP_ROUTE.exec(req.url ?? "");
         if (req.method === "GET" && clip) {
           const name = clip[1].replace(UNSAFE_NAME, "");
