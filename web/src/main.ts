@@ -1,79 +1,30 @@
 import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import { type Calibration, type Corners, createCalibration } from "./calibrate";
-import { createDetector, type Detector, INPUT_SIZE } from "./detector";
+import {
+  createDetector,
+  type Detection,
+  type Detector,
+  INPUT_SIZE,
+} from "./detector";
 import { drawHands, drawModelInput, drawQuad } from "./draw";
 import { createHandTracker, type HandTracker } from "./hands";
-import type { Point } from "./homography";
 import { createHud, type Hud } from "./hud";
 import { createLab } from "./lab";
-import { lockKeybed } from "./lock";
-import { depthInKeyWidths, measureCorners } from "./measure";
-import { facing } from "./orient";
+import { depthInKeyWidths } from "./measure";
+import { canonicalQuad, setCameraFocal, setKeybedDepth } from "./pose";
 import {
-  cameraFocalFraction,
-  canonicalQuad,
-  setCameraFocal,
-  setKeybedDepth,
-  solvePose,
-} from "./pose";
-import { checkQuad } from "./quad";
-import { estimateFocalFraction, keybedDepthFromQuad } from "./rectfit";
-import { createSteady } from "./steady";
+  createTracker,
+  type Measured,
+  readsToHold,
+  type TrackerState,
+} from "./tracker";
 import { viteAssets } from "./viteassets";
 
-const DETECT_INTERVAL_MS = 250;
 const MANUAL_COLOR = "rgba(56,189,248,0.9)";
 const AUTO_COLOR = "#4ade80";
-const WEAK_COLOR = "#f87171";
 const MODEL_VIEW_PX = 216;
-// a couple of rejected frames is noise; a run of them means the keybed really is gone
-const MISSES_BEFORE_CLEAR = 4;
-// measured over every labelled frame: a quad that is really a perspective view of the keybed
-// solves with residual under 0.32; a broken one scores 2.0 or more; a well shaped quad in the
-// wrong place lands between, and this catches the worse half of those too
-const MAX_POSE_RESIDUAL = 1.0;
-// the mask inside a real keybed's box averages near 1; a box drawn over a guess averages
-// far less, and a guess is not shown at all
-const MIN_CONFIDENCE = 0.6;
 const DEPTH_KEY = "kvt.keybedDepthUnits.v2";
 const FOCAL_KEY = "kvt.cameraFocalFraction.v2";
-// ends within this ratio of each other are a view from above; further apart is oblique
-const TOP_VIEW_ENDS = 1.15;
-// a keybed is 3 to 9 key widths deep and a camera lens 0.45 to 2 frame widths of focal;
-// corners that measure outside that were not on the keybed and measure nothing
-const DEPTH_RANGE = [3, 9];
-const FOCAL_RANGE = [0.45, 2];
-
-// when a recording plays in place of the camera, every detection is kept on the window so
-// a lab session can read the pipeline's behaviour over time
-interface LabRecord {
-  t: number;
-  ms: number;
-  still: boolean;
-  motion: number;
-  raw: { x: number; y: number }[] | null;
-  drawn: { x: number; y: number }[] | null;
-  note: string;
-  // the snapped boundary points the rectangle fit was given, in frame pixels
-  points?: { x: number; y: number }[];
-}
-declare global {
-  interface Window {
-    kvtLab?: LabRecord[];
-  }
-}
-function labLog(record: LabRecord): void {
-  window.kvtLab?.push(record);
-}
-
-interface Lock {
-  quad: Point[];
-  inputQuad: Point[];
-  latencyMs: number;
-  onKeybed: boolean;
-  margin: number;
-  gray: Float32Array;
-}
 
 function createVideo(): HTMLVideoElement {
   const video = document.createElement("video");
@@ -123,7 +74,6 @@ async function startCamera(video: HTMLVideoElement): Promise<void> {
     video.src = `/lab/clip/${clip}`;
     video.loop = true;
     video.muted = true;
-    window.kvtLab = [];
   } else {
     video.srcObject = await navigator.mediaDevices.getUserMedia({
       video: true,
@@ -150,6 +100,18 @@ function videoBox(
   return { x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, w, h };
 }
 
+// what the HUD's status line says about the tracker: reading progress while it hunts, held
+// once corners are fixed, or the reason it gave up
+function trackerStatusText(state: TrackerState): string {
+  if (state.kind === "hunting") {
+    return `reading ${state.progress.agreed}/${readsToHold}`;
+  }
+  if (state.kind === "held") {
+    return state.byHand ? "held (hand-placed)" : "held";
+  }
+  return `lost: ${state.reason}`;
+}
+
 function startLoop(
   video: HTMLVideoElement,
   canvas: HTMLCanvasElement,
@@ -157,130 +119,14 @@ function startLoop(
   calibration: Calibration,
   hud: Hud,
   detector: Detector | null,
-  tracker: HandTracker | null,
+  handTracker: HandTracker | null,
 ): () => Corners {
-  let lock: Lock | null = null;
-  let misses = 0;
-  const steady = createSteady();
   let hands: HandLandmarkerResult | null = null;
   let lastVideoTime = -1;
-  let inFlight = false;
-  let lastDetectAt = -Infinity;
+  // kept only so the "input" HUD toggle can still show the model's own view; the tracker
+  // itself never exposes a detection's raw gray image
+  let lastDetection: Detection | null = null;
 
-  const detect = (now: number): void => {
-    if (!detector || inFlight || video.videoWidth === 0) {
-      return;
-    }
-    inFlight = true;
-    lastDetectAt = now;
-    detector
-      .detect(video)
-      .then((detection) => {
-        if (!detection.quad) {
-          labLog({
-            t: performance.now(),
-            ms: detection.latencyMs,
-            still: detection.still,
-            motion: detection.motion,
-            raw: null,
-            drawn: null,
-            note: "no keybed",
-          });
-          lock = null;
-          steady.reset();
-          hud.status("detect", `${detection.latencyMs.toFixed(1)} ms`);
-          hud.status(
-            "keybed",
-            `no keybed (mask ${(detection.coverage * 100).toFixed(1)}%)`,
-          );
-          return;
-        }
-        const held = lockKeybed(detection, {
-          width: video.videoWidth,
-          height: video.videoHeight,
-        });
-        if (!held.held) {
-          labLog({
-            t: performance.now(),
-            ms: detection.latencyMs,
-            still: detection.still,
-            motion: detection.motion,
-            raw: detection.quad,
-            drawn: null,
-            note: held.reason,
-          });
-          misses += 1;
-          if (misses >= MISSES_BEFORE_CLEAR) {
-            lock = null;
-            steady.reset();
-          }
-          hud.status("detect", `${detection.latencyMs.toFixed(1)} ms`);
-          hud.status("keybed", `${held.reason} (${misses} missed)`);
-          return;
-        }
-        const framed = held.quad;
-        const facts = {
-          quad: held.inputQuad,
-          margin: held.margin,
-          onKeybed: true,
-        };
-        misses = 0;
-        lock = {
-          quad: steady.accept(framed, detection.still),
-          inputQuad: facts.quad,
-          latencyMs: detection.latencyMs,
-          onKeybed: facts.onKeybed,
-          margin: facts.margin,
-          gray: detection.gray,
-        };
-        labLog({
-          t: performance.now(),
-          ms: detection.latencyMs,
-          still: detection.still,
-          motion: detection.motion,
-          raw: framed,
-          drawn: lock.quad,
-          note: "",
-          points: window.kvtPoints,
-        });
-        hud.status(
-          "detect",
-          `${detection.latencyMs.toFixed(1)} ms  ${detection.still ? "still" : "moving"} ${
-            Number.isFinite(detection.motion)
-              ? detection.motion.toFixed(4)
-              : "-"
-          }`,
-        );
-        hud.status(
-          "keybed",
-          `mask ${(detection.coverage * 100).toFixed(1)}%  ` +
-            `${facts.onKeybed ? "keys found" : "no key pattern"} (${facts.margin.toFixed(2)})`,
-        );
-      })
-      .catch((err: unknown) => {
-        hud.status("model", errorMessage(err));
-      })
-      .finally(() => {
-        inFlight = false;
-      });
-  };
-
-  hud.onRedetect(() => detect(performance.now()));
-  hud.onAdopt(() => {
-    if (lock) {
-      calibration.setCorners(lock.quad);
-    }
-  });
-  // the corners are often placed perfectly but a half turn out, which reads as front and back
-  // swapped; rolling by two relabels the same rectangle rather than making it be dragged again
-  hud.onFlip(() => {
-    const c = calibration.getCorners();
-    calibration.setCorners([c[2], c[3], c[0], c[1]]);
-  });
-  // the keybed's shape and the camera's lens, each measured once from the dragged corners
-  // and kept in this browser: the shape from a view from above, where the aspect is plain
-  // to see, the lens from an oblique view, where the convergence fixes it. Which one a
-  // press measures is decided by how unequal the two ends are.
   const remember = (key: string, value: number): void => {
     try {
       localStorage.setItem(key, String(value));
@@ -300,17 +146,9 @@ function startLoop(
   } catch {
     // storage can be blocked; the defaults stand
   }
-  hud.onMeasure(() => {
-    const measured = measureCorners(orientedManual(), {
-      width: video.videoWidth,
-      height: video.videoHeight,
-    });
-    if (measured.kind === "refused") {
-      hud.status("keybed", `${measured.reason}, nothing measured`);
-      return;
-    }
+
+  const onMeasured = (measured: Measured): void => {
     if (measured.kind === "depth") {
-      setKeybedDepth(measured.units);
       remember(DEPTH_KEY, measured.units);
       hud.status(
         "keybed",
@@ -318,12 +156,33 @@ function startLoop(
       );
       return;
     }
-    setCameraFocal(measured.fraction);
     remember(FOCAL_KEY, measured.fraction);
     hud.status(
       "keybed",
       `lens measured: focal ${measured.fraction.toFixed(2)} of the frame width`,
     );
+  };
+  const capturing: Detector | null = detector && {
+    detect: async (frame) => {
+      const detection = await detector.detect(frame);
+      lastDetection = detection;
+      return detection;
+    },
+  };
+  const tracker = capturing ? createTracker(capturing, { onMeasured }) : null;
+
+  hud.onRedetect(() => tracker?.release());
+  hud.onAdopt(() => {
+    const state = tracker?.state();
+    if (state?.kind === "held") {
+      calibration.setCorners(state.quad);
+    }
+  });
+  // the corners are often placed perfectly but a half turn out, which reads as front and back
+  // swapped; rolling by two relabels the same rectangle rather than making it be dragged again
+  hud.onFlip(() => {
+    const c = calibration.getCorners();
+    calibration.setCorners([c[2], c[3], c[0], c[1]]);
   });
 
   // the dragged corners mean what was dragged: handle 1 to 2 runs along the black keys,
@@ -332,13 +191,15 @@ function startLoop(
   const orientedManual = (): Corners =>
     canonicalQuad(calibration.getCorners()) as Corners;
 
+  hud.onMeasure(() => tracker?.hold(orientedManual()));
+
   const frame = (now: number): void => {
-    if (hud.state.live && now - lastDetectAt > DETECT_INTERVAL_MS) {
-      detect(now);
+    if (hud.state.live) {
+      void tracker?.look(video, now);
     }
-    if (tracker && hud.state.hands && video.currentTime !== lastVideoTime) {
+    if (handTracker && hud.state.hands && video.currentTime !== lastVideoTime) {
       lastVideoTime = video.currentTime;
-      hands = tracker.detect(video, now);
+      hands = handTracker.detect(video, now);
     }
     ctx.fillStyle = "#050505";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -347,15 +208,9 @@ function startLoop(
 
     ctx.save();
     ctx.translate(box.x, box.y);
-    if (lock) {
-      drawQuad(
-        ctx,
-        lock.quad,
-        box.w,
-        box.h,
-        lock.onKeybed ? AUTO_COLOR : WEAK_COLOR,
-        lock.onKeybed ? "keybed" : "no key pattern",
-      );
+    const state = tracker?.state();
+    if (state?.kind === "held") {
+      drawQuad(ctx, state.quad, box.w, box.h, AUTO_COLOR, "keybed");
     }
     if (hud.state.corners) {
       drawQuad(ctx, orientedManual(), box.w, box.h, MANUAL_COLOR, "manual");
@@ -366,8 +221,23 @@ function startLoop(
     }
     ctx.restore();
 
-    if (lock && hud.state.input) {
-      drawModelInput(ctx, lock.gray, INPUT_SIZE, lock.inputQuad, MODEL_VIEW_PX);
+    if (hud.state.input && lastDetection?.quad && lastDetection.inputQuad) {
+      drawModelInput(
+        ctx,
+        lastDetection.gray,
+        INPUT_SIZE,
+        lastDetection.inputQuad,
+        MODEL_VIEW_PX,
+      );
+    }
+
+    if (state) {
+      const reading = tracker?.reading() ?? null;
+      hud.status(
+        "detect",
+        reading ? `${reading.latencyMs.toFixed(1)} ms` : "waiting",
+      );
+      hud.status("keybed", trackerStatusText(state));
     }
     requestAnimationFrame(frame);
   };
@@ -413,7 +283,7 @@ async function boot(): Promise<void> {
       () => hud.state.corners,
       () => videoBox(video, canvas),
     );
-    const tracker = await createHandTracker(viteAssets).catch(() => null);
+    const handTracker = await createHandTracker(viteAssets).catch(() => null);
     const labelCorners = startLoop(
       video,
       canvas,
@@ -421,7 +291,7 @@ async function boot(): Promise<void> {
       calibration,
       hud,
       await loading,
-      tracker,
+      handTracker,
     );
     const stream = video.srcObject;
     if (stream instanceof MediaStream) {

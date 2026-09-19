@@ -174,14 +174,14 @@ export function createHud(): Hud {
   );
 
   const redetect = document.createElement("button");
-  redetect.textContent = "once";
-  redetect.title = "run the detector a single time";
+  redetect.textContent = "detect again";
+  redetect.title = "give up on the current keybed and start hunting again";
   styleButton(redetect);
   detectRow.appendChild(redetect);
 
   const adopt = document.createElement("button");
   adopt.textContent = "adopt";
-  adopt.title = "copy the detected rectangle into the draggable corners";
+  adopt.title = "copy the held rectangle into the draggable corners";
   styleButton(adopt);
   capture.appendChild(adopt);
 
@@ -193,9 +193,9 @@ export function createHud(): Hud {
   capture.appendChild(flip);
 
   const measure = document.createElement("button");
-  measure.textContent = "measure";
+  measure.textContent = "hold";
   measure.title =
-    "read the keybed's shape from the four corners, placed on a view from above";
+    "hold the dragged corners as the keybed, measuring its shape or lens along the way";
   styleButton(measure);
   capture.appendChild(measure);
 

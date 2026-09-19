@@ -87,3 +87,22 @@ export {
 } from "./pose";
 export { checkQuad, type QuadCheck } from "./quad";
 export { createSteady, type Steady } from "./steady";
+export { createStillness, type Stillness } from "./stillness";
+export {
+  agreeWithin,
+  confirmEveryMs,
+  createTracker,
+  glanceEveryMs,
+  type Measured,
+  missesBeforeLost,
+  missesWhileHeld,
+  type Progress,
+  type Reading,
+  readsToHold,
+  searchEveryMs,
+  staysWithin,
+  type Tracker,
+  type TrackerOptions,
+  type TrackerState,
+  trustStillnessForMs,
+} from "./tracker";
