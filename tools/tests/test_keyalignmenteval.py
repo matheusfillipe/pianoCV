@@ -31,7 +31,7 @@ def test_entries_paths_input_and_preview_validate_data(tmp_path: Path) -> None:
     model_input = evaluation._input(image)
     assert model_input.shape == (1, 3, 240, 320)
     assert model_input.dtype == np.float32
-    assert model_input[0, 0, 0, 0] == 1
+    assert model_input[0, 0, 0, 0] == pytest.approx((1 - 0.485) / 0.229)
 
     mask = np.array([[True, False]])
     preview = evaluation._preview(image, mask, mask)

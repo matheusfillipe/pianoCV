@@ -17,6 +17,8 @@ DEFAULT_MODEL_PATH = (
 DEFAULT_OUT_DIR = _REPO_ROOT / "data" / "models" / "kaggle-key-alignment" / "evaluation"
 _INPUT_SIZE = (320, 240)
 _THRESHOLD = 0.5
+_MEAN = np.asarray((0.485, 0.456, 0.406), dtype=np.float32)
+_STD = np.asarray((0.229, 0.224, 0.225), dtype=np.float32)
 
 
 def _entries(path: Path) -> list[dict[str, object]]:
@@ -33,7 +35,9 @@ def _path(entry: dict[str, object], name: str, root: Path) -> Path:
 def _input(image_bgr: np.ndarray) -> np.ndarray:
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     image = cv2.resize(image_rgb, _INPUT_SIZE, interpolation=cv2.INTER_AREA)
-    return np.ascontiguousarray(image.transpose(2, 0, 1)[None].astype(np.float32) / 255.0)
+    floating = image.astype(np.float32) / 255.0
+    normalized = (floating - _MEAN) / _STD
+    return np.ascontiguousarray(normalized.transpose(2, 0, 1)[None])
 
 
 def _iou(predicted: np.ndarray, target: np.ndarray) -> float:

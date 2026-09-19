@@ -40,6 +40,7 @@ node_modules/
 # tooling local state
 .playwright-mcp/
 graphify-out/
+*.ses
 
 # weights are distributed on their own, never through git; the CC-BY keybed mesh ships here
 # because the generator page needs it to render at all
