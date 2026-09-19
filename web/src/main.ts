@@ -23,8 +23,6 @@ const MODEL_VIEW_PX = 216;
 const MISSES_BEFORE_CLEAR = 4;
 const DEPTH_KEY = "kvt.keybedDepthUnits.v2";
 const FOCAL_KEY = "kvt.cameraFocalFraction.v2";
-const SHOW_KEY_MASKS = new URLSearchParams(location.search).has("keymask");
-const SHOW_DEBUG = new URLSearchParams(location.search).has("debug");
 
 // when a recording plays in place of the camera, every detection is kept on the window so
 // a lab session can read the pipeline's behaviour over time
@@ -397,7 +395,7 @@ function startLoop(
     ctx.save();
     ctx.translate(box.x, box.y);
     if (lock) {
-      if (SHOW_DEBUG && boardProposal) {
+      if (hud.state.proposal && boardProposal) {
         drawQuad(
           ctx,
           boardProposal,
@@ -415,7 +413,7 @@ function startLoop(
         lock.onKeybed ? AUTO_COLOR : WEAK_COLOR,
         lock.onKeybed ? "keybed" : "no key pattern",
       );
-      if (SHOW_KEY_MASKS && board && boardQuad) {
+      if (hud.state.keyMasks && board && boardQuad) {
         drawKeyMasks(ctx, boardQuad, board, box.w, box.h);
       }
     }

@@ -3,6 +3,8 @@ export interface HudState {
   corners: boolean;
   hands: boolean;
   input: boolean;
+  proposal: boolean;
+  keyMasks: boolean;
 }
 
 export interface Hud {
@@ -73,12 +75,14 @@ function row(parent: HTMLElement, label: string): HTMLElement {
 }
 
 export function createHud(): Hud {
-  // corners stay on: they are the label that capture saves, and a hidden label is a wrong label
+  const params = new URLSearchParams(location.search);
   const state: HudState = {
     live: true,
-    corners: true,
+    corners: false,
     hands: false,
     input: false,
+    proposal: params.has("debug"),
+    keyMasks: params.has("keymask"),
   };
   const panel = document.createElement("div");
   Object.assign(panel.style, PANEL_STYLE);
@@ -147,6 +151,24 @@ export function createHud(): Hud {
   );
   toggle(
     detectRow,
+    "proposal",
+    "show the raw Seg2 keybed proposal before geometry calibration",
+    () => state.proposal,
+    (on) => {
+      state.proposal = on;
+    },
+  );
+  toggle(
+    detectRow,
+    "keys",
+    "show the individual per-key masks",
+    () => state.keyMasks,
+    (on) => {
+      state.keyMasks = on;
+    },
+  );
+  toggle(
+    detectRow,
     "manual",
     "drag the four corners onto the keybed yourself",
     () => state.corners,
@@ -211,6 +233,12 @@ export function createHud(): Hud {
     },
     i: () => {
       state.input = !state.input;
+    },
+    p: () => {
+      state.proposal = !state.proposal;
+    },
+    k: () => {
+      state.keyMasks = !state.keyMasks;
     },
   };
   window.addEventListener("keydown", (event) => {
