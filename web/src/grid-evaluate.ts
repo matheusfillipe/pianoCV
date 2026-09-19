@@ -1,8 +1,19 @@
 import { createDetector } from "./detector";
 import type { Point } from "./homography";
+import { keybedDepth, setKeybedDepth, WHITE_KEY_COUNT } from "./pose";
 import { viteAssets } from "./viteassets";
 
 const DEFAULT_SAMPLES = 105;
+
+// the grid renders an 88-key keybed, 52 white keys at 23.5 mm deep by 150 mm, while
+// WHITE_KEY_COUNT stays fixed to the real 61-key instrument; only the aspect ratio the
+// rectangle fit derives from these matters, so we reproduce it by scaling the depth alone
+const RENDER_WHITE_KEY_COUNT = 52;
+const RENDER_WHITE_KEY_MM = 23.5;
+const RENDER_DEPTH_MM = 150;
+const RENDER_DEPTH_UNITS = RENDER_DEPTH_MM / RENDER_WHITE_KEY_MM;
+const RENDER_KEYBED_DEPTH_UNITS =
+  (WHITE_KEY_COUNT * RENDER_DEPTH_UNITS) / RENDER_WHITE_KEY_COUNT;
 
 interface Sidecar {
   corners: Point[];
@@ -161,36 +172,42 @@ async function evaluateGrid(): Promise<{
     .slice(0, count("samples", DEFAULT_SAMPLES));
   const detector = await createDetector(viteAssets);
   const rows: Row[] = [];
-  for (const name of names) {
-    const sidecarResponse = await fetch(
-      `/lab/data/grid/${encodeURIComponent(name)}`,
-    );
-    if (!sidecarResponse.ok) continue;
-    const sidecar = (await sidecarResponse.json()) as Sidecar;
-    if (sidecar.corners.length !== 4 || !sidecar.pose) continue;
-    const image = await bitmap(`${name.slice(0, -5)}.png`);
-    // each render is an independent pose, so the detector's temporal smoothing (motion,
-    // still-frame averaging, the held rectangle) must not carry over from the last one
-    detector.reset();
-    const detection = await detector.detect(image);
-    image.close();
-    rows.push({
-      name,
-      pose: sidecar.pose,
-      fullyVisible: fullyVisible(sidecar.corners),
-      raw: stage(
-        detection.proposalQuad,
-        sidecar.corners,
-        sidecar.imageWidth,
-        sidecar.imageHeight,
-      ),
-      rectangle: stage(
-        detection.quad,
-        sidecar.corners,
-        sidecar.imageWidth,
-        sidecar.imageHeight,
-      ),
-    });
+  const previousDepth = keybedDepth();
+  setKeybedDepth(RENDER_KEYBED_DEPTH_UNITS);
+  try {
+    for (const name of names) {
+      const sidecarResponse = await fetch(
+        `/lab/data/grid/${encodeURIComponent(name)}`,
+      );
+      if (!sidecarResponse.ok) continue;
+      const sidecar = (await sidecarResponse.json()) as Sidecar;
+      if (sidecar.corners.length !== 4 || !sidecar.pose) continue;
+      const image = await bitmap(`${name.slice(0, -5)}.png`);
+      // each render is an independent pose, so the detector's temporal smoothing (motion,
+      // still-frame averaging, the held rectangle) must not carry over from the last one
+      detector.reset();
+      const detection = await detector.detect(image);
+      image.close();
+      rows.push({
+        name,
+        pose: sidecar.pose,
+        fullyVisible: fullyVisible(sidecar.corners),
+        raw: stage(
+          detection.proposalQuad,
+          sidecar.corners,
+          sidecar.imageWidth,
+          sidecar.imageHeight,
+        ),
+        rectangle: stage(
+          detection.quad,
+          sidecar.corners,
+          sidecar.imageWidth,
+          sidecar.imageHeight,
+        ),
+      });
+    }
+  } finally {
+    setKeybedDepth(previousDepth);
   }
   return {
     kind: "kvt-browser-grid-evaluation",
