@@ -150,6 +150,7 @@ function startLoop(
   let board: Board | null = null;
   let boardQuad: Point[] | null = null;
   let boardProposal: Point[] | null = null;
+  let boardSourceQuad: Point[] | null = null;
   let lastBoardReadAt = -Infinity;
   let lastDetectionStill = false;
 
@@ -157,6 +158,7 @@ function startLoop(
     board = null;
     boardQuad = null;
     boardProposal = null;
+    boardSourceQuad = null;
     lastBoardReadAt = -Infinity;
   };
 
@@ -217,12 +219,12 @@ function startLoop(
           return;
         }
         const framed = held.quad;
-        const proposal = boardProposal;
+        const source = boardSourceQuad;
         if (
-          proposal &&
+          source &&
           framed.some(
             (p, i) =>
-              Math.hypot(p.x - proposal[i].x, p.y - proposal[i].y) > 0.04,
+              Math.hypot(p.x - source[i].x, p.y - source[i].y) > 0.04,
           )
         ) {
           clearBoard();
@@ -383,6 +385,7 @@ function startLoop(
       boardProposal = fitted
         ? (lock.proposalQuad ?? lock.quad).map((point) => ({ ...point }))
         : null;
+      boardSourceQuad = fitted ? lock.quad.map((point) => ({ ...point })) : null;
       boardQuad =
         fitted?.quad.map((point) => ({
           x: (point.x - box.x) / box.w,

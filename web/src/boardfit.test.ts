@@ -117,6 +117,41 @@ describe("synthetic calibration across camera intrinsics", () => {
       }),
     ).toBe(true);
   });
+  it("does not pull a correct rear edge onto an internal brightness seam", () => {
+    const rendered = scene(45, 60, 36, 96);
+    const imageToUnit = findHomography(rendered.quad, unit);
+    const data = new Uint8ClampedArray(rendered.pixels.data);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const p = applyHomography(imageToUnit, x, y);
+        if (p.y < 0) {
+          const at = (y * width + x) * 4;
+          data[at] = 200;
+          data[at + 1] = 200;
+          data[at + 2] = 200;
+        }
+        if (p.y > 0.16 && p.y < 0.2) {
+          const at = (y * width + x) * 4;
+          data[at] = 25;
+          data[at + 1] = 25;
+          data[at + 2] = 25;
+        }
+      }
+    }
+    const fit = calibrateBoard({ ...rendered.pixels, data }, rendered.quad);
+    expect(fit).not.toBeNull();
+    if (!fit) throw new Error("calibration unexpectedly failed");
+    expect(
+      Math.max(
+        ...fit.quad.slice(0, 2).map((point, index) =>
+          Math.hypot(
+            point.x - rendered.quad[index].x,
+            point.y - rendered.quad[index].y,
+          ),
+        ),
+      ),
+    ).toBeLessThan(3);
+  });
   it("declines a cropped keybed instead of stretching a partial stripe", () => {
     const rendered = scene(45, 0, 36, 96);
     const cropped = rendered.quad.map((point, index) =>
