@@ -22,6 +22,7 @@ const unit = [
 const MAX_INWARD_EDGE_SHIFT = 0.4;
 const MIN_EDGE_MOVE_PX = 1;
 const MIN_EDGE_AGREEMENT_GAIN = 0.01;
+const AGREEMENT_ALREADY_SOLVES_LAYOUT = 0.85;
 
 function fullyInFrame(image: ImageData, quad: readonly Point[]): boolean {
   return (
@@ -312,6 +313,13 @@ export function calibrateBoard(
   if (!fullyInFrame(image, proposal)) return null;
   const initial = refitBoard(image, proposal);
   if (initial === null) return null;
+  // A high-confidence black-key layout is stronger evidence than a generic
+  // brightness edge. Keep the detector rectangle in that case: keyboard
+  // cases and control panels contain long parallel seams that otherwise look
+  // like a better front or rear boundary.
+  if (initial.agreement >= AGREEMENT_ALREADY_SOLVES_LAYOUT) {
+    return { board: initial.board, quad: [...proposal] };
+  }
   const quad = refineBoardEdges(image, proposal, initial.board);
   const refined = refitBoard(image, quad);
   // The stripe fit samples the actual black-key pattern. An edge move that makes

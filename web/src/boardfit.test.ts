@@ -1,6 +1,6 @@
 import { PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { fitBoard } from "./boardfit";
+import { fitBoard, refitBoard } from "./boardfit";
 import { calibrateBoard } from "./boardgeometry";
 import { applyHomography, findHomography } from "./homography";
 import { isBlack, keyUnits } from "./keys";
@@ -78,6 +78,9 @@ describe("synthetic calibration across camera intrinsics", () => {
       rendered.quad[3],
     ];
     const fit = calibrateBoard(rendered.pixels, proposal);
+    expect(refitBoard(rendered.pixels, proposal)?.agreement).toBeLessThan(
+      0.85,
+    );
     expect(fit).not.toBeNull();
     for (let i = 0; i < 4; i += 1) {
       const actual = fit?.quad[i];
@@ -139,6 +142,9 @@ describe("synthetic calibration across camera intrinsics", () => {
       }
     }
     const fit = calibrateBoard({ ...rendered.pixels, data }, rendered.quad);
+    expect(
+      refitBoard({ ...rendered.pixels, data }, rendered.quad)?.agreement,
+    ).toBeGreaterThanOrEqual(0.85);
     expect(fit).not.toBeNull();
     if (!fit) throw new Error("calibration unexpectedly failed");
     expect(
