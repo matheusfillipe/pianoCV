@@ -20,6 +20,8 @@ const unit = [
 // instrument. Keeping this in normalized board space also makes the limit
 // independent of camera resolution and focal length.
 const MAX_INWARD_EDGE_SHIFT = 0.4;
+const MIN_EDGE_MOVE_PX = 1;
+const MIN_EDGE_AGREEMENT_GAIN = 0.01;
 
 function fullyInFrame(image: ImageData, quad: readonly Point[]): boolean {
   return (
@@ -314,7 +316,18 @@ export function calibrateBoard(
   const refined = refitBoard(image, quad);
   // The stripe fit samples the actual black-key pattern. An edge move that makes
   // that pattern less plausible is a panel/body edge, not a keyboard correction.
-  if (refined === null || refined.agreement < initial.agreement) {
+  const moved = quad.some(
+    (point, index) =>
+      Math.hypot(
+        point.x - (proposal[index]?.x ?? point.x),
+        point.y - (proposal[index]?.y ?? point.y),
+      ) > MIN_EDGE_MOVE_PX,
+  );
+  if (
+    refined === null ||
+    refined.agreement < initial.agreement ||
+    (moved && refined.agreement < initial.agreement + MIN_EDGE_AGREEMENT_GAIN)
+  ) {
     return { board: initial.board, quad: [...proposal] };
   }
   return { board: refined.board, quad };
