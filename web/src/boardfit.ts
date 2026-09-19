@@ -41,6 +41,11 @@ type Shape = {
   readonly agreement: number;
 };
 
+interface BoardFit {
+  readonly board: Board;
+  readonly agreement: number;
+}
+
 function brightness(pixels: ImageData, point: Point): number | null {
   const x = Math.round(point.x);
   const y = Math.round(point.y);
@@ -390,10 +395,10 @@ function fitLocalBlackKeys(
   return candidates.length === 0 ? undefined : candidates;
 }
 
-export function fitBoard(
+function fitBoardResult(
   pixels: ImageData,
   quad: readonly Point[],
-): Board | null {
+): BoardFit | null {
   const homography = findHomography(UNIT_SQUARE, quad);
   let best: { readonly coarse: Shape; readonly shape: Shape } | null = null;
   for (const depth of DEPTHS) {
@@ -428,7 +433,24 @@ export function fitBoard(
     blackDepth: fitBlackDepth(pixels, homography, fitted),
   };
   return {
-    ...boardWithDepth,
-    blackKeys: fitLocalBlackKeys(pixels, homography, boardWithDepth),
+    agreement: best.shape.agreement,
+    board: {
+      ...boardWithDepth,
+      blackKeys: fitLocalBlackKeys(pixels, homography, boardWithDepth),
+    },
   };
+}
+
+export function fitBoard(
+  pixels: ImageData,
+  quad: readonly Point[],
+): Board | null {
+  return fitBoardResult(pixels, quad)?.board ?? null;
+}
+
+export function refitBoard(
+  pixels: ImageData,
+  quad: readonly Point[],
+): BoardFit | null {
+  return fitBoardResult(pixels, quad);
 }

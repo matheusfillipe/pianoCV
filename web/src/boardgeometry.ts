@@ -1,4 +1,4 @@
-import { fitBoard } from "./boardfit";
+import { refitBoard } from "./boardfit";
 import {
   applyHomography,
   findHomography,
@@ -308,9 +308,14 @@ export function calibrateBoard(
   // spreading it over that quad invents key positions. A later subrange solver
   // can support cropped views; until then, decline rather than draw a false map.
   if (!fullyInFrame(image, proposal)) return null;
-  const initial = fitBoard(image, proposal);
+  const initial = refitBoard(image, proposal);
   if (initial === null) return null;
-  const quad = refineBoardEdges(image, proposal, initial);
-  const board = fitBoard(image, quad);
-  return board === null ? null : { board, quad };
+  const quad = refineBoardEdges(image, proposal, initial.board);
+  const refined = refitBoard(image, quad);
+  // The stripe fit samples the actual black-key pattern. An edge move that makes
+  // that pattern less plausible is a panel/body edge, not a keyboard correction.
+  if (refined === null || refined.agreement < initial.agreement) {
+    return { board: initial.board, quad: [...proposal] };
+  }
+  return { board: refined.board, quad };
 }
