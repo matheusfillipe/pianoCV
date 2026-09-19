@@ -25,12 +25,14 @@ interface Stage {
 interface Row {
   name: string;
   pose: Sidecar["pose"];
+  fullyVisible: boolean;
   raw: Stage;
   rectangle: Stage;
   keyLayout: Stage;
 }
 
 interface Summary {
+  eligible: number;
   found: number;
   medianErrorPx: number | null;
   p95ErrorPx: number | null;
@@ -107,10 +109,12 @@ function summary(
   name: keyof Pick<Row, "raw" | "rectangle" | "keyLayout">,
 ): Summary {
   const errors = rows
+    .filter((row) => row.fullyVisible)
     .map((row) => row[name].error?.mean)
-    .filter((value): value is number => value !== null)
+    .filter((value): value is number => Number.isFinite(value))
     .sort((a, b) => a - b);
   return {
+    eligible: rows.filter((row) => row.fullyVisible).length,
     found: errors.length,
     medianErrorPx: errors.length
       ? (errors[Math.floor(errors.length / 2)] ?? null)
@@ -122,6 +126,13 @@ function summary(
       : null,
     worstErrorPx: errors.at(-1) ?? null,
   };
+}
+
+function fullyVisible(corners: readonly Point[]): boolean {
+  return corners.every(
+    (corner) =>
+      corner.x >= 0 && corner.x <= 1 && corner.y >= 0 && corner.y <= 1,
+  );
 }
 
 async function evaluateGrid(): Promise<{
@@ -163,6 +174,7 @@ async function evaluateGrid(): Promise<{
     rows.push({
       name,
       pose: sidecar.pose,
+      fullyVisible: fullyVisible(sidecar.corners),
       raw: stage(
         detection.proposalQuad,
         sidecar.corners,
