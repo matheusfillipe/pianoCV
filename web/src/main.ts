@@ -1,4 +1,6 @@
 import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
+import type { BoardRead } from "./board";
+import { createBoardReader } from "./boardreader";
 import { type Calibration, type Corners, createCalibration } from "./calibrate";
 import {
   createDetector,
@@ -9,7 +11,9 @@ import {
 import { drawHands, drawModelInput, drawQuad } from "./draw";
 import { createHandTracker, type HandTracker } from "./hands";
 import { createHud, type Hud } from "./hud";
+import { keybedSpace } from "./keyspace";
 import { createLab } from "./lab";
+import { createLabeller } from "./labeller";
 import { depthInKeyWidths } from "./measure";
 import { canonicalQuad, setCameraFocal, setKeybedDepth } from "./pose";
 import {
@@ -112,6 +116,19 @@ function trackerStatusText(state: TrackerState): string {
   return `lost: ${state.reason}`;
 }
 
+// what the HUD's status line says about the board reader: how it found, or why it is still
+// unsure, once it has had a look at the held keybed
+function boardStatusText(read: BoardRead | null): string {
+  if (read === null) {
+    return "reading";
+  }
+  if (read.kind === "unsure") {
+    return read.reason;
+  }
+  const keys = read.board.highest - read.board.lowest + 1;
+  return `${keys} keys, agreement ${(read.agreement * 100).toFixed(0)}%`;
+}
+
 function startLoop(
   video: HTMLVideoElement,
   canvas: HTMLCanvasElement,
@@ -171,6 +188,9 @@ function startLoop(
     reset: () => detector.reset(),
   };
   const tracker = capturing ? createTracker(capturing, { onMeasured }) : null;
+  const boardReader = createBoardReader();
+  const labeller = createLabeller();
+  let boardHeld: TrackerState | null = null;
 
   hud.onRedetect(() => tracker?.release());
   hud.onAdopt(() => {
@@ -212,6 +232,17 @@ function startLoop(
     const state = tracker?.state();
     if (state?.kind === "held") {
       drawQuad(ctx, state.quad, box.w, box.h, AUTO_COLOR, "keybed");
+      if (state !== boardHeld) {
+        boardHeld = state;
+        boardReader.moved(now);
+      }
+      const size = { width: video.videoWidth, height: video.videoHeight };
+      const space = keybedSpace({ quad: state.quad }, size);
+      if (space) {
+        boardReader.look(space, video, size, now);
+      }
+    } else {
+      boardHeld = null;
     }
     if (hud.state.corners) {
       drawQuad(ctx, orientedManual(), box.w, box.h, MANUAL_COLOR, "manual");
@@ -239,6 +270,11 @@ function startLoop(
         reading ? `${reading.latencyMs.toFixed(1)} ms` : "waiting",
       );
       hud.status("keybed", trackerStatusText(state));
+      if (state.kind === "held") {
+        hud.status("board", boardStatusText(boardReader.last()));
+      }
+      hud.status("label", `${labeller.saved()} saved`);
+      labeller.look(video, state, boardReader.last(), hud.state.label, now);
     }
     requestAnimationFrame(frame);
   };

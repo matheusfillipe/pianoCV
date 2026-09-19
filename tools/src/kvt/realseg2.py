@@ -52,12 +52,12 @@ def _mask(corners: list[list[float]]) -> np.ndarray:
 
 
 def _split_sources(
-    source_stems: list[str], held_out_stem: str | None, validation_fraction: float, seed: int
+    groups: list[str], held_out_stem: str | None, validation_fraction: float, seed: int
 ) -> dict[str, set[str]]:
     if not 0.0 <= validation_fraction < 1.0:
         raise ValueError("validation fraction must be in [0, 1)")
-    held_out = {held_out_stem} if held_out_stem in source_stems else set()
-    remaining = sorted(set(source_stems) - held_out)
+    held_out = {held_out_stem} if held_out_stem in groups else set()
+    remaining = sorted(set(groups) - held_out)
     rng = np.random.default_rng(seed)
     shuffled = [remaining[index] for index in rng.permutation(len(remaining))]
     validation_count = min(len(shuffled), round(len(shuffled) * validation_fraction))
@@ -78,9 +78,10 @@ def prepare(
     frames = [frame for frame in load_frames(frames_dir) if frame.corners_px is not None]
     if not frames:
         raise ValueError(f"no labelled frames found in {frames_dir}")
-    splits = _split_sources(
-        [frame.source_stem for frame in frames], held_out_stem, validation_fraction, seed
-    )
+    # a session groups every frame from one held keyboard, so they land in one split together
+    # rather than tearing one hold across train and validation
+    groups = [frame.session or frame.source_stem for frame in frames]
+    splits = _split_sources(groups, held_out_stem, validation_fraction, seed)
     # Every invocation is a complete corpus. Retaining old frames would silently mix labels from
     # another split or camera session into the upload.
     shutil.rmtree(output_dir, ignore_errors=True)
@@ -104,7 +105,8 @@ def prepare(
         if not cv2.imwrite(str(mask_dir / name), _mask(corners)):
             raise OSError(f"cannot write {mask_dir / name}")
         prepared.append(Prepared(name, frame.source_stem, corners))
-        split = next(group for group, sources in splits.items() if frame.source_stem in sources)
+        member = frame.session or frame.source_stem
+        split = next(group for group, sources in splits.items() if member in sources)
         split_names[split].append(name)
     (output_dir / "corners.json").write_text(
         json.dumps({item.name.removesuffix(".png"): item.corners for item in prepared}, indent=2)

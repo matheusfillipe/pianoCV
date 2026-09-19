@@ -3,6 +3,7 @@ export interface HudState {
     corners: boolean;
     hands: boolean;
     input: boolean;
+    label: boolean;
 }
 export interface Hud {
     readonly state: HudState;

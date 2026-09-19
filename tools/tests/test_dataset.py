@@ -3,6 +3,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 
 from kvt.dataset import (
     canonical_quad,
@@ -14,8 +15,10 @@ from kvt.dataset import (
 )
 
 
-def _write_sidecar(path: Path, kind: str, width: int, height: int) -> None:
-    sidecar = {
+def _write_sidecar(
+    path: Path, kind: str, width: int, height: int, session: str | None = None
+) -> None:
+    sidecar: dict[str, object] = {
         "kind": kind,
         "startedAt": 0,
         "durationMs": 0,
@@ -27,8 +30,10 @@ def _write_sidecar(path: Path, kind: str, width: int, height: int) -> None:
         ],
         "imageWidth": width,
         "imageHeight": height,
-        "mimeType": "image/png" if kind == "snap" else "video/webm",
+        "mimeType": "image/png" if kind in ("snap", "auto") else "video/webm",
     }
+    if session is not None:
+        sidecar["session"] = session
     path.write_text(json.dumps(sidecar))
 
 
@@ -184,6 +189,20 @@ def test_extract_skips_invalid_sidecars(tmp_path: Path) -> None:
                 "imageHeight": 1,
             }
         ),
+        json.dumps(
+            {
+                "kind": "auto",
+                "session": 5,
+                "corners": [
+                    {"x": 0, "y": 0},
+                    {"x": 1, "y": 0},
+                    {"x": 1, "y": 1},
+                    {"x": 0, "y": 1},
+                ],
+                "imageWidth": 1,
+                "imageHeight": 1,
+            }
+        ),
     ]
     for content in cases:
         sidecar.write_text(content)
@@ -270,6 +289,12 @@ def test_load_frames_ignores_malformed_labels(tmp_path: Path) -> None:
                 "source_stem": "b",
                 "kind": "snap",
             },
+            "bad-session.png": {
+                "corners_px": [[0, 0], [1, 0], [1, 1], [0, 1]],
+                "source_stem": "b",
+                "kind": "snap",
+                "session": 5,
+            },
             "junk-entry": "nope",
         },
     }
@@ -341,6 +366,59 @@ def test_parse_sidecar_returns_canonical_corners(tmp_path: Path) -> None:
     )
     corners = parse_sidecar(path).corners * np.array([640.0, 480.0])
     assert np.linalg.norm(corners[1] - corners[0]) > np.linalg.norm(corners[3] - corners[0])
+
+
+def test_parse_sidecar_reads_a_session(tmp_path: Path) -> None:
+    path = tmp_path / "auto-x.json"
+    _write_sidecar(path, "auto", 320, 240, session="hold-1")
+    assert parse_sidecar(path).session == "hold-1"
+
+
+def test_parse_sidecar_defaults_session_to_none(tmp_path: Path) -> None:
+    path = tmp_path / "snap-x.json"
+    _write_sidecar(path, "snap", 320, 240)
+    assert parse_sidecar(path).session is None
+
+
+def test_parse_sidecar_rejects_a_non_string_session(tmp_path: Path) -> None:
+    path = tmp_path / "auto-bad.json"
+    path.write_text(
+        json.dumps(
+            {
+                "kind": "auto",
+                "session": 5,
+                "corners": [
+                    {"x": 0, "y": 0},
+                    {"x": 1, "y": 0},
+                    {"x": 1, "y": 1},
+                    {"x": 0, "y": 1},
+                ],
+                "imageWidth": 1,
+                "imageHeight": 1,
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="session"):
+        parse_sidecar(path)
+
+
+def test_extract_treats_an_auto_sidecar_like_a_snap(tmp_path: Path) -> None:
+    recordings_dir = tmp_path / "recordings"
+    frames_dir = tmp_path / "frames"
+    recordings_dir.mkdir()
+    _write_snap(recordings_dir / "auto-x.png")
+    _write_sidecar(recordings_dir / "auto-x.json", "auto", 320, 240, session="hold-1")
+
+    frames = extract(recordings_dir, frames_dir)
+
+    assert len(frames) == 1
+    assert frames[0].kind == "auto"
+    assert frames[0].session == "hold-1"
+    assert frames[0].corners_px is not None
+    assert np.allclose(frames[0].corners_px, SNAP_CORNERS)
+
+    again = load_frames(frames_dir)
+    assert again[0].session == "hold-1"
 
 
 def test_load_frames_keeps_null_corners(tmp_path: Path) -> None:

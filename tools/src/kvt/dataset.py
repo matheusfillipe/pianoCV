@@ -36,6 +36,7 @@ class Frame:
     corners_px: np.ndarray | None
     source_stem: str
     kind: str
+    session: str | None = None
 
 
 @dataclass
@@ -44,6 +45,7 @@ class Sidecar:
     corners: np.ndarray
     width: int
     height: int
+    session: str | None = None
 
 
 @dataclass
@@ -51,6 +53,7 @@ class FrameEntry:
     corners_px: np.ndarray | None
     source_stem: str
     kind: str
+    session: str | None = None
 
 
 @dataclass
@@ -187,7 +190,9 @@ def extract(recordings_dir: Path, frames_dir: Path, gemini_dir: Path | None = No
             )
             corners_px = sidecar.corners * np.array([float(sidecar.width), float(sidecar.height)])
             if recording.kind == "snap":
-                _extract_snap(recording, frames_dir, corners_px, labels)
+                _extract_snap(
+                    recording, frames_dir, corners_px, labels, sidecar.kind, sidecar.session
+                )
             elif recording.kind == "gemini":
                 _extract_gemini(recording, frames_dir, corners_px, labels)
             else:
@@ -222,6 +227,7 @@ def load_frames(frames_dir: Path) -> list[Frame]:
             corners_px=entry.corners_px,
             source_stem=entry.source_stem,
             kind=entry.kind,
+            session=entry.session,
         )
         for name, entry in sorted(labels.frames.items())
     ]
@@ -232,6 +238,8 @@ def _extract_snap(
     frames_dir: Path,
     corners_px: np.ndarray,
     labels: Labels,
+    kind: str,
+    session: str | None,
 ) -> None:
     image = cv2.imread(str(recording.media_path))
     if image is None:
@@ -241,7 +249,8 @@ def _extract_snap(
     labels.frames[name] = FrameEntry(
         corners_px=orient_quad(image, corners_px),
         source_stem=recording.stem,
-        kind="snap",
+        kind=kind,
+        session=session,
     )
 
 
@@ -305,8 +314,11 @@ def parse_sidecar(path: Path, default_kind: str | None = None) -> Sidecar:
     width = data.get("imageWidth")
     height = data.get("imageHeight")
     corners = data.get("corners")
+    session = data.get("session")
     if not isinstance(kind, str) or not isinstance(width, int) or not isinstance(height, int):
         raise ValueError(f"sidecar {path} has invalid metadata")
+    if session is not None and not isinstance(session, str):
+        raise ValueError(f"sidecar {path} has an invalid session")
     if not isinstance(corners, list) or len(corners) != 4:
         raise ValueError(f"sidecar {path} must list exactly 4 corners")
     points = np.zeros((4, 2), dtype=np.float64)
@@ -320,7 +332,11 @@ def parse_sidecar(path: Path, default_kind: str | None = None) -> Sidecar:
         points[i] = (float(x), float(y))
     scale = np.array([float(width), float(height)])
     return Sidecar(
-        kind=kind, corners=canonical_quad(points * scale) / scale, width=width, height=height
+        kind=kind,
+        corners=canonical_quad(points * scale) / scale,
+        width=width,
+        height=height,
+        session=session,
     )
 
 
@@ -353,9 +369,12 @@ def _parse_frame_entry(entry: object) -> FrameEntry | None:
     kind = entry.get("kind")
     if not isinstance(source_stem, str) or not isinstance(kind, str):
         return None
+    session = entry.get("session")
+    if session is not None and not isinstance(session, str):
+        return None
     raw_corners = entry.get("corners_px")
     if raw_corners is None:
-        return FrameEntry(corners_px=None, source_stem=source_stem, kind=kind)
+        return FrameEntry(corners_px=None, source_stem=source_stem, kind=kind, session=session)
     if not isinstance(raw_corners, list) or len(raw_corners) != 4:
         return None
     corners = np.zeros((4, 2), dtype=np.float64)
@@ -366,7 +385,9 @@ def _parse_frame_entry(entry: object) -> FrameEntry | None:
         if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
             return None
         corners[i] = (float(x), float(y))
-    return FrameEntry(corners_px=canonical_quad(corners), source_stem=source_stem, kind=kind)
+    return FrameEntry(
+        corners_px=canonical_quad(corners), source_stem=source_stem, kind=kind, session=session
+    )
 
 
 def _write_labels(frames_dir: Path, labels: Labels) -> None:
@@ -377,6 +398,7 @@ def _write_labels(frames_dir: Path, labels: Labels) -> None:
                 "corners_px": None if entry.corners_px is None else entry.corners_px.tolist(),
                 "source_stem": entry.source_stem,
                 "kind": entry.kind,
+                "session": entry.session,
             }
             for name, entry in sorted(labels.frames.items())
         },

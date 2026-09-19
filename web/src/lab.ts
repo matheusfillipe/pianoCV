@@ -82,6 +82,40 @@ function download(blob: Blob, name: string): void {
   URL.revokeObjectURL(url);
 }
 
+export async function postToLab(
+  name: string,
+  body: Blob | string,
+  contentType?: string,
+): Promise<void> {
+  const response = await fetch(`/lab/save/${name}`, {
+    method: "POST",
+    body,
+    headers: contentType ? { "Content-Type": contentType } : undefined,
+  });
+  if (!response.ok) {
+    throw new Error(`lab save failed: ${response.status}`);
+  }
+}
+
+/** Draws one video frame onto a same-sized canvas and reads it back as a PNG blob, or null while
+ * the video has no dimensions yet. */
+export function captureFrame(video: HTMLVideoElement): Promise<Blob | null> {
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  if (canvas.width === 0 || canvas.height === 0) {
+    return Promise.resolve(null);
+  }
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return Promise.resolve(null);
+  }
+  ctx.drawImage(video, 0, 0);
+  return new Promise((resolve) => {
+    canvas.toBlob(resolve, "image/png");
+  });
+}
+
 export function createLab(options: LabOptions): void {
   const { video, stream, getCorners, mount } = options;
   const bar = createBar(mount);
@@ -114,26 +148,11 @@ export function createLab(options: LabOptions): void {
     }
   };
 
-  const post = async (
-    name: string,
-    body: Blob | string,
-    contentType?: string,
-  ): Promise<void> => {
-    const response = await fetch(`/lab/save/${name}`, {
-      method: "POST",
-      body,
-      headers: contentType ? { "Content-Type": contentType } : undefined,
-    });
-    if (!response.ok) {
-      throw new Error(`lab save failed: ${response.status}`);
-    }
-  };
-
   const save = (name: string, blob: Blob, sidecar: Sidecar): void => {
     const stem = name.split(".")[0];
-    post(name, blob)
+    postToLab(name, blob)
       .then(() =>
-        post(`${stem}.json`, JSON.stringify(sidecar), "application/json"),
+        postToLab(`${stem}.json`, JSON.stringify(sidecar), "application/json"),
       )
       .then(() => {
         flash("saved");
@@ -159,19 +178,8 @@ export function createLab(options: LabOptions): void {
     if (!guard()) {
       return;
     }
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    if (canvas.width === 0 || canvas.height === 0) {
-      return;
-    }
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      return;
-    }
-    ctx.drawImage(video, 0, 0);
     const capturedAt = Date.now();
-    canvas.toBlob((blob) => {
+    void captureFrame(video).then((blob) => {
       if (!blob) {
         return;
       }
@@ -180,11 +188,11 @@ export function createLab(options: LabOptions): void {
         startedAt: capturedAt,
         durationMs: 0,
         corners: getCorners(),
-        imageWidth: canvas.width,
-        imageHeight: canvas.height,
+        imageWidth: video.videoWidth,
+        imageHeight: video.videoHeight,
         mimeType: "image/png",
       });
-    }, "image/png");
+    });
   };
 
   const toggleRecording = (): void => {

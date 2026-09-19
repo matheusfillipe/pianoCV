@@ -3,6 +3,7 @@ export interface HudState {
   corners: boolean;
   hands: boolean;
   input: boolean;
+  label: boolean;
 }
 
 export interface Hud {
@@ -74,11 +75,13 @@ function row(parent: HTMLElement, label: string): HTMLElement {
 
 export function createHud(): Hud {
   // corners stay on: they are the label that capture saves, and a hidden label is a wrong label
+  // auto-labelling stays off: it writes pictures of whatever the camera sees to disk
   const state: HudState = {
     live: true,
     corners: true,
     hands: false,
     input: false,
+    label: false,
   };
   const panel = document.createElement("div");
   Object.assign(panel.style, PANEL_STYLE);
@@ -173,6 +176,16 @@ export function createHud(): Hud {
     },
   );
 
+  toggle(
+    capture,
+    "label",
+    "save held frames as training labels",
+    () => state.label,
+    (on) => {
+      state.label = on;
+    },
+  );
+
   const redetect = document.createElement("button");
   redetect.textContent = "detect again";
   redetect.title = "give up on the current keybed and start hunting again";
@@ -211,6 +224,9 @@ export function createHud(): Hud {
     },
     i: () => {
       state.input = !state.input;
+    },
+    a: () => {
+      state.label = !state.label;
     },
   };
   window.addEventListener("keydown", (event) => {
