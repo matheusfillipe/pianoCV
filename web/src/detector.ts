@@ -121,6 +121,7 @@ export interface Detection {
 
 export interface Detector {
   detect(frame: CanvasImageSource): Promise<Detection>;
+  reset(): void;
 }
 
 function grayscale(
@@ -329,6 +330,15 @@ export async function createDetector(
   };
 
   return {
+    reset: () => {
+      previousFit = null;
+      havePrevious = false;
+      recent.length = 0;
+      averaged.fill(0);
+      probability.fill(0);
+      steadyGray = new Float32Array(0);
+      steadyCount = 0;
+    },
     detect: async (frame) => {
       // canvas bilinear aliases a 4x downscale badly and the key pattern is exactly that fine,
       // so ask the browser for a properly filtered resample the way cv2 INTER_AREA does

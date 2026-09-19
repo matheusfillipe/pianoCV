@@ -159,6 +159,7 @@ async function evaluateGrid(): Promise<{
     const sidecar = (await sidecarResponse.json()) as Sidecar;
     if (sidecar.corners.length !== 4 || !sidecar.pose) continue;
     const image = await bitmap(`${name.slice(0, -5)}.png`);
+    detector.reset();
     const detection = await detector.detect(image);
     const frame = pixels(image);
     const layout = detection.quad
