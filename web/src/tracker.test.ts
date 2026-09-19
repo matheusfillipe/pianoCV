@@ -59,6 +59,7 @@ function keybedGray(quad: Point[], size: number): Float32Array {
 function keybedDetection(quad: Point[], still = true): Detection {
   return {
     quad,
+    proposalQuad: quad,
     inputQuad: quad,
     motion: 0,
     still,
@@ -74,6 +75,7 @@ function keybedDetection(quad: Point[], still = true): Detection {
 function noKeybedDetection(): Detection {
   return {
     quad: null,
+    proposalQuad: null,
     inputQuad: null,
     motion: 0,
     still: true,
@@ -98,6 +100,7 @@ function fakeDetector(script: (call: number) => Detection): FakeDetector {
       fake.calls += 1;
       return detection;
     },
+    reset: () => undefined,
   };
   return fake;
 }

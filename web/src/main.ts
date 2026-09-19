@@ -168,6 +168,7 @@ function startLoop(
       lastDetection = detection;
       return detection;
     },
+    reset: () => detector.reset(),
   };
   const tracker = capturing ? createTracker(capturing, { onMeasured }) : null;
 
