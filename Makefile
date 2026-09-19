@@ -8,7 +8,8 @@ KAGGLE_SEG2_OUTPUT_DIR ?= data/models/kaggle-keybed-seg2-real
         lab-seg2-kaggle-run lab-seg2-kaggle-output lab-browser-gridtest \
         tools-fix tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
-        build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export lab-evaluate lab-real-seg2-prepare
+        build web-typecheck web-lint web-fix web-test web-build dev model clean lab-export \
+        lab-evaluate lab-real-seg2-prepare lab-compare
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -139,6 +140,9 @@ lab-evaluate: ## evaluate a detector on already-extracted labelled frames
 
 lab-real-seg2-prepare: ## prepare real labelled frames for SegNet2 fine-tuning
 	cd tools && uv run python -m kvt.realseg2 $(ARGS)
+
+lab-compare: ## compare onnx keybed detectors on the render grid and on real recordings
+	$(UV) python -m kvt.compare $(ARGS)
 
 lab-seg2-kaggle-run: ## push and start the private real-frame Seg2 fine-tuning notebook
 	kaggle kernels push -p tools/kaggle/keybed-seg2
