@@ -1,5 +1,11 @@
 export type { RuntimeAssets } from "./assets";
 export { handModelUrl, skinModelUrl } from "./assets";
+export { type BoardRead, type Picture, readBoard } from "./board";
+export {
+  type BoardReader,
+  type Capture,
+  createBoardReader,
+} from "./boardreader";
 export {
   createDetector,
   type Detection,
@@ -36,6 +42,21 @@ export {
   keyUnits,
   whiteIndex,
 } from "./keys";
+export {
+  type Bar,
+  type Board,
+  boardOf,
+  type Keybed,
+  type KeybedSpace,
+  keyBand,
+  keybedSpace,
+  keyFace,
+  keysOf,
+  type PitchRange,
+  type Size,
+  spanInKeys,
+  whiteKeysOf,
+} from "./keyspace";
 export {
   type Lock,
   lockKeybed,
