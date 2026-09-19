@@ -290,11 +290,10 @@ export async function createDetector(
     let rectangle = held.rectangle;
     const settled =
       still &&
-      previousFit !== null &&
-      previousFit.every(
+      previousFit?.every(
         (p, i) =>
           Math.hypot(p.x - rectangle[i].x, p.y - rectangle[i].y) <= RESOLVE_PX,
-      );
+      ) === true;
     if (settled && previousFit) {
       const anchor = previousFit;
       rectangle = anchor.map((p, i) => ({
