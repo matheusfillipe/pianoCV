@@ -13,7 +13,12 @@ import { createHandTracker, type HandTracker } from "./hands";
 import type { Point } from "./homography";
 import { createHud, type Hud } from "./hud";
 import { keybedSpace } from "./keyspace";
-import { createKeyReader, type KeyRead, projectKeys } from "./keystrip";
+import {
+  createKeyReader,
+  type KeyRead,
+  projectKeys,
+  trimFarEdge,
+} from "./keystrip";
 import { createLab } from "./lab";
 import { createLabeller } from "./labeller";
 import { depthInKeyWidths } from "./measure";
@@ -264,6 +269,16 @@ function startLoop(
           byHand: state.byHand,
         };
       }
+      if (state !== boardHeld) {
+        boardHeld = state;
+        boardReader.moved(now);
+        keyReader.moved(now);
+      }
+      const space = keybedSpace({ quad: state.quad }, size);
+      if (space) {
+        boardReader.look(space, video, size, now);
+      }
+      keyReader.look(video, state.quad, size, now);
       if (isNewHold || reading !== followedReading) {
         follower.reset(state.quad, video, size);
         followedReading = reading;
@@ -275,6 +290,11 @@ function startLoop(
         if (moved) {
           labelState.quad = [...moved];
         }
+      }
+      // the far edge the model (or a hand) drew reaches into the case; the key detector already
+      // measured how far, so drawing, key projection and auto-labelling all trim onto the keys
+      if (labelState) {
+        labelState.quad = trimFarEdge(labelState.quad, keyReader.fraction());
       }
       hud.status(
         "follow",
@@ -290,16 +310,6 @@ function startLoop(
         AUTO_COLOR,
         "keybed",
       );
-      if (state !== boardHeld) {
-        boardHeld = state;
-        boardReader.moved(now);
-        keyReader.moved(now);
-      }
-      const space = keybedSpace({ quad: state.quad }, size);
-      if (space) {
-        boardReader.look(space, video, size, now);
-      }
-      keyReader.look(video, state.quad, size, now);
       if (hud.state.keys) {
         const found = keyReader.last();
         if (found) {

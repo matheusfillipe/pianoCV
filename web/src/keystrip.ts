@@ -187,6 +187,76 @@ function luminance(data: Uint8ClampedArray, at: number): number {
   return 0.299 * data[at] + 0.587 * data[at + 1] + 0.114 * data[at + 2];
 }
 
+const FAR_EDGE_CONTRAST_MIN = 60;
+const FAR_EDGE_BRIGHTNESS_MIN = 60;
+const MIN_TRIM_FRACTION = 0.02;
+const MAX_TRIM_FRACTION = 0.35;
+const MIN_KEY_ROWS = 20;
+const NEAR_EDGE_CHECK_ROWS = 6;
+const NEAR_EDGE_MIN_HITS = 4;
+
+function rowIsKeys(strip: Strip, y: number): boolean {
+  let min = 255;
+  let max = 0;
+  let sum = 0;
+  let count = 0;
+  for (let x = 0; x < strip.width; x += 1) {
+    const at = (y * strip.width + x) * 4;
+    if (strip.data[at + 3] === 0) {
+      continue;
+    }
+    const value = luminance(strip.data, at);
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+    sum += value;
+    count += 1;
+  }
+  if (count === 0) {
+    return false;
+  }
+  return (
+    max - min > FAR_EDGE_CONTRAST_MIN && sum / count > FAR_EDGE_BRIGHTNESS_MIN
+  );
+}
+
+/** Where the keys begin inside a rectified strip, as a fraction of its depth: the case is dark
+ * and flat, the keys alternate black and white, so the first row bright and varied enough is
+ * where the case ends. Null when the strip carries too little evidence to trust: no such row,
+ * an implausible fraction, too few rows read as keys, or the keys not reaching the near edge. */
+export function measureFarEdge(strip: Strip): number | null {
+  const isKeys: boolean[] = [];
+  for (let y = 0; y < strip.height; y += 1) {
+    isKeys.push(rowIsKeys(strip, y));
+  }
+  const first = isKeys.indexOf(true);
+  if (first === -1) {
+    return null;
+  }
+  const fraction = first / strip.height;
+  if (fraction < MIN_TRIM_FRACTION || fraction > MAX_TRIM_FRACTION) {
+    return null;
+  }
+  if (isKeys.filter(Boolean).length < MIN_KEY_ROWS) {
+    return null;
+  }
+  const nearHits = isKeys.slice(-NEAR_EDGE_CHECK_ROWS).filter(Boolean).length;
+  if (nearHits < NEAR_EDGE_MIN_HITS) {
+    return null;
+  }
+  return fraction;
+}
+
+/** Moves the far edge (corners 0 and 1) toward the near edge (corners 2 and 3) by a fraction of
+ * the depth, in the plane the quad is already drawn in. The near edge never moves: only the far
+ * edge was ever measured onto the case instead of the keys. */
+export function trimFarEdge(quad: readonly Point[], fraction: number): Point[] {
+  const lerp = (from: Point, to: Point): Point => ({
+    x: from.x + (to.x - from.x) * fraction,
+    y: from.y + (to.y - from.y) * fraction,
+  });
+  return [lerp(quad[0], quad[3]), lerp(quad[1], quad[2]), quad[2], quad[3]];
+}
+
 function bandProfile(strip: Strip, fromFrac: number, toFrac: number): number[] {
   const fromY = Math.max(0, Math.floor(fromFrac * strip.height));
   const toY = Math.min(strip.height - 1, Math.ceil(toFrac * strip.height));
@@ -662,6 +732,9 @@ const settleAfterMs = 500;
 
 export type KeyReader = {
   readonly last: () => KeyRead | null;
+  /** The far-edge trim this reader currently trusts, as a fraction of depth, or 0 before any
+   * try has found evidence for one. */
+  readonly fraction: () => number;
   readonly look: (
     frame: CanvasImageSource,
     quad: readonly Point[],
@@ -676,9 +749,11 @@ export function createKeyReader(): KeyReader {
   let taken = 0;
   let best: KeyRead | null = null;
   let dueAt: number | null = null;
+  let trimFraction: number | null = null;
 
   return {
     last: () => best,
+    fraction: () => trimFraction ?? 0,
     look: (frame, quad, size, now) => {
       if (dueAt !== null && now < dueAt) {
         return;
@@ -695,10 +770,24 @@ export function createKeyReader(): KeyReader {
       if (source === null) {
         return;
       }
-      const strip = rectifyStrip(source, quad);
-      if (strip === null) {
+      const rawStrip = rectifyStrip(source, quad);
+      if (rawStrip === null) {
         return;
       }
+      const measured = measureFarEdge(rawStrip);
+      if (measured !== null) {
+        // the walk already smooths a measured key width at this same rate; we reuse it here
+        // so a noisy try cannot swing the drawn edge
+        trimFraction =
+          trimFraction === null
+            ? measured
+            : WIDTH_SMOOTH_ALPHA * measured +
+              (1 - WIDTH_SMOOTH_ALPHA) * trimFraction;
+      }
+      const strip =
+        trimFraction === null
+          ? rawStrip
+          : (rectifyStrip(source, trimFarEdge(quad, trimFraction)) ?? rawStrip);
       const found = detectKeys(strip);
       window.kvtKeyStrip = strip;
       window.kvtKeyRead = found;
@@ -714,6 +803,7 @@ export function createKeyReader(): KeyReader {
       taken = 0;
       best = null;
       dueAt = now + settleAfterMs;
+      trimFraction = null;
     },
   };
 }

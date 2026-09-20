@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { isBlack, keyUnits } from "./keys";
-import { detectKeys, type Strip } from "./keystrip";
+import {
+  detectKeys,
+  measureFarEdge,
+  type Strip,
+  trimFarEdge,
+} from "./keystrip";
 
 const WIDTH = 1200;
 const HEIGHT = 150;
@@ -177,5 +182,82 @@ describe("detectKeys", () => {
       const found = detectKeys(paintNoise(seed));
       expect(found.confidence).toBeLessThan(0.3);
     }
+  });
+});
+
+/** A strip with a flat, dark case for the first `caseFraction` of its depth, then a keyboard-like
+ * pattern (alternating bright and dark vertical stripes, high contrast at every remaining row)
+ * for the rest, so `measureFarEdge` has a known depth to recover. */
+function paintCaseThenKeys(caseFraction: number): Strip {
+  const data = new Uint8ClampedArray(WIDTH * HEIGHT * 4);
+  fill(data, 30);
+  const caseRows = Math.round(caseFraction * HEIGHT);
+  for (let y = caseRows; y < HEIGHT; y += 1) {
+    for (let x = 0; x < WIDTH; x += 1) {
+      const at = (y * WIDTH + x) * 4;
+      const level = x % 40 < 20 ? 220 : 20;
+      data[at] = level;
+      data[at + 1] = level;
+      data[at + 2] = level;
+      data[at + 3] = 255;
+    }
+  }
+  return { width: WIDTH, height: HEIGHT, data };
+}
+
+function paintAllCase(): Strip {
+  const data = new Uint8ClampedArray(WIDTH * HEIGHT * 4);
+  fill(data, 30);
+  return { width: WIDTH, height: HEIGHT, data };
+}
+
+describe("measureFarEdge", () => {
+  it("recovers where the keys start inside the strip", () => {
+    const fraction = measureFarEdge(paintCaseThenKeys(0.2));
+    expect(fraction).toBeCloseTo(0.2, 2);
+  });
+
+  it("recovers a shallower case too", () => {
+    const fraction = measureFarEdge(paintCaseThenKeys(0.08));
+    expect(fraction).toBeCloseTo(0.08, 2);
+  });
+
+  it("finds nothing on a strip with no keys", () => {
+    expect(measureFarEdge(paintAllCase())).toBeNull();
+  });
+});
+
+describe("trimFarEdge", () => {
+  const quad = [
+    { x: 0.1, y: 0.2 },
+    { x: 0.9, y: 0.22 },
+    { x: 0.85, y: 0.6 },
+    { x: 0.15, y: 0.58 },
+  ];
+
+  it("never moves the near edge", () => {
+    const trimmed = trimFarEdge(quad, 0.25);
+    expect(trimmed[2]).toEqual(quad[2]);
+    expect(trimmed[3]).toEqual(quad[3]);
+  });
+
+  it("leaves the quad untouched at fraction zero", () => {
+    expect(trimFarEdge(quad, 0)).toEqual(quad);
+  });
+
+  it("moves the far edge toward the near edge by the given fraction", () => {
+    const trimmed = trimFarEdge(quad, 0.25);
+    expect(trimmed[0].x).toBeCloseTo(
+      quad[0].x + (quad[3].x - quad[0].x) * 0.25,
+    );
+    expect(trimmed[0].y).toBeCloseTo(
+      quad[0].y + (quad[3].y - quad[0].y) * 0.25,
+    );
+    expect(trimmed[1].x).toBeCloseTo(
+      quad[1].x + (quad[2].x - quad[1].x) * 0.25,
+    );
+    expect(trimmed[1].y).toBeCloseTo(
+      quad[1].y + (quad[2].y - quad[1].y) * 0.25,
+    );
   });
 });
