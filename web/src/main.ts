@@ -9,7 +9,9 @@ import {
   INPUT_SIZE,
 } from "./detector";
 import { drawHands, drawModelInput, drawQuad } from "./draw";
+import { createFollower } from "./follow";
 import { createHandTracker, type HandTracker } from "./hands";
+import type { Point } from "./homography";
 import { createHud, type Hud } from "./hud";
 import { keybedSpace } from "./keyspace";
 import { createLab } from "./lab";
@@ -19,10 +21,20 @@ import { canonicalQuad, setCameraFocal, setKeybedDepth } from "./pose";
 import {
   createTracker,
   type Measured,
+  type Reading,
   readsToHold,
   type TrackerState,
 } from "./tracker";
 import { viteAssets } from "./viteassets";
+
+declare global {
+  interface Window {
+    // the tracker's own frozen corners next to what the follower drew from them, for the lab
+    // to read off how far one has drifted from the other
+    kvtHeldQuad?: Point[];
+    kvtFollowedQuad?: Point[];
+  }
+}
 
 const MANUAL_COLOR = "rgba(56,189,248,0.9)";
 const AUTO_COLOR = "#4ade80";
@@ -190,7 +202,14 @@ function startLoop(
   const tracker = capturing ? createTracker(capturing, { onMeasured }) : null;
   const boardReader = createBoardReader();
   const labeller = createLabeller();
+  const follower = createFollower();
   let boardHeld: TrackerState | null = null;
+  // identity of the held state and the last detection read, so a fresh model confirmation
+  // (a new hold, or the same hold re-verified) is what resets the follower, not every frame
+  let followedFrom: TrackerState | null = null;
+  let followedReading: Reading | null = null;
+  type Followed = { kind: "held"; quad: Point[]; byHand: boolean };
+  let labelState: Followed | null = null;
 
   hud.onRedetect(() => tracker?.release());
   hud.onAdopt(() => {
@@ -231,18 +250,59 @@ function startLoop(
     ctx.translate(box.x, box.y);
     const state = tracker?.state();
     if (state?.kind === "held") {
-      drawQuad(ctx, state.quad, box.w, box.h, AUTO_COLOR, "keybed");
+      const size = { width: video.videoWidth, height: video.videoHeight };
+      const reading = tracker?.reading() ?? null;
+      // a fresh labelState object marks a new hold for the labeller's own session
+      // bookkeeping; a mere reconfirmation of the same hold must not look like a new one,
+      // so it only ever updates the existing object's quad in place
+      const isNewHold = state !== followedFrom;
+      if (isNewHold) {
+        followedFrom = state;
+        labelState = {
+          kind: "held",
+          quad: [...state.quad],
+          byHand: state.byHand,
+        };
+      }
+      if (isNewHold || reading !== followedReading) {
+        follower.reset(state.quad, video, size);
+        followedReading = reading;
+        if (labelState) {
+          labelState.quad = [...state.quad];
+        }
+      } else if (labelState) {
+        const moved = follower.update(video, size);
+        if (moved) {
+          labelState.quad = [...moved];
+        }
+      }
+      hud.status(
+        "follow",
+        `${(window.kvtFollowMs?.at(-1) ?? 0).toFixed(2)} ms`,
+      );
+      window.kvtHeldQuad = state.quad;
+      window.kvtFollowedQuad = labelState?.quad ?? state.quad;
+      drawQuad(
+        ctx,
+        labelState?.quad ?? state.quad,
+        box.w,
+        box.h,
+        AUTO_COLOR,
+        "keybed",
+      );
       if (state !== boardHeld) {
         boardHeld = state;
         boardReader.moved(now);
       }
-      const size = { width: video.videoWidth, height: video.videoHeight };
       const space = keybedSpace({ quad: state.quad }, size);
       if (space) {
         boardReader.look(space, video, size, now);
       }
     } else {
       boardHeld = null;
+      followedFrom = null;
+      followedReading = null;
+      labelState = null;
     }
     if (hud.state.corners) {
       drawQuad(ctx, orientedManual(), box.w, box.h, MANUAL_COLOR, "manual");
@@ -274,7 +334,13 @@ function startLoop(
         hud.status("board", boardStatusText(boardReader.last()));
       }
       hud.status("label", `${labeller.saved()} saved`);
-      labeller.look(video, state, boardReader.last(), hud.state.label, now);
+      labeller.look(
+        video,
+        state.kind === "held" ? (labelState ?? state) : state,
+        boardReader.last(),
+        hud.state.label,
+        now,
+      );
     }
     requestAnimationFrame(frame);
   };

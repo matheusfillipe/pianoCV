@@ -38,4 +38,5 @@ export interface Detector {
     detect(frame: CanvasImageSource): Promise<Detection>;
     reset(): void;
 }
+export declare function grayscale(data: Uint8ClampedArray, out: Float32Array, scale?: number): void;
 export declare function createDetector(assets: RuntimeAssets, url?: string): Promise<Detector>;

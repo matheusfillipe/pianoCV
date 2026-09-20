@@ -13,7 +13,9 @@ export interface Stillness {
   readonly forget: () => void;
 }
 
-function inside(quad: readonly Point[], at: Point): boolean {
+// unit-agnostic point-in-polygon test, shared with follow.ts which samples in pixel space
+// rather than this module's frame fractions
+export function pointInQuad(quad: readonly Point[], at: Point): boolean {
   let within = false;
   for (let index = 0; index < quad.length; index += 1) {
     const one = quad[index];
@@ -55,7 +57,7 @@ export function createStillness(): Stillness {
       for (let y = 0; y < DOWN; y += 1) {
         for (let x = 0; x < ACROSS; x += 1) {
           const at = { x: (x + 0.5) / ACROSS, y: (y + 0.5) / DOWN };
-          if (keybed !== null && inside(keybed, at)) {
+          if (keybed !== null && pointInQuad(keybed, at)) {
             continue;
           }
           const index = (y * ACROSS + x) * 4;

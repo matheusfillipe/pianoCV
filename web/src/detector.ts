@@ -124,7 +124,7 @@ export interface Detector {
   reset(): void;
 }
 
-function grayscale(
+export function grayscale(
   data: Uint8ClampedArray,
   out: Float32Array,
   scale = 1,
