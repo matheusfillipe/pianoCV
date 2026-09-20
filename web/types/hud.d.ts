@@ -4,6 +4,7 @@ export interface HudState {
     hands: boolean;
     input: boolean;
     label: boolean;
+    keys: boolean;
 }
 export interface Hud {
     readonly state: HudState;

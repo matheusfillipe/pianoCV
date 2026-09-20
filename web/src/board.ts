@@ -106,7 +106,7 @@ function darkOctave(bleed: number): Uint8Array {
 
 /** Otsu's split: the brightness cut that separates a stretch's readings
  * furthest apart, which on a keybed is the cut between black and white keys. */
-function split(level: readonly number[]): {
+export function split(level: readonly number[]): {
   readonly at: number;
   readonly separation: number;
 } {

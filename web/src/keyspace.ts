@@ -107,7 +107,7 @@ export type Bar = readonly [Point, Point, Point, Point];
 
 /** How much of the keybed's depth a black key takes, measured from the far
  * edge where the black keys start. */
-const blackKeyDepth = 0.62;
+export const blackKeyDepth = 0.62;
 
 function quad(corners: readonly (Point | null)[]): Bar | null {
   const [a, b, c, d] = corners;

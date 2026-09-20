@@ -1,5 +1,4 @@
 import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
-import type { BoardRead } from "./board";
 import { createBoardReader } from "./boardreader";
 import { type Calibration, type Corners, createCalibration } from "./calibrate";
 import {
@@ -8,12 +7,13 @@ import {
   type Detector,
   INPUT_SIZE,
 } from "./detector";
-import { drawHands, drawModelInput, drawQuad } from "./draw";
+import { drawHands, drawKeys, drawModelInput, drawQuad } from "./draw";
 import { createFollower } from "./follow";
 import { createHandTracker, type HandTracker } from "./hands";
 import type { Point } from "./homography";
 import { createHud, type Hud } from "./hud";
 import { keybedSpace } from "./keyspace";
+import { createKeyReader, type KeyRead, projectKeys } from "./keystrip";
 import { createLab } from "./lab";
 import { createLabeller } from "./labeller";
 import { depthInKeyWidths } from "./measure";
@@ -128,17 +128,16 @@ function trackerStatusText(state: TrackerState): string {
   return `lost: ${state.reason}`;
 }
 
-// what the HUD's status line says about the board reader: how it found, or why it is still
-// unsure, once it has had a look at the held keybed
-function boardStatusText(read: BoardRead | null): string {
+// what the HUD's status line says about the keys found in the rectified strip: how many white
+// keys and how sure of it, or why it is still unsure, once it has had a look at the held keybed
+function keyStatusText(read: KeyRead | null): string {
   if (read === null) {
     return "reading";
   }
   if (read.kind === "unsure") {
     return read.reason;
   }
-  const keys = read.board.highest - read.board.lowest + 1;
-  return `${keys} keys, agreement ${(read.agreement * 100).toFixed(0)}%`;
+  return `${read.whiteKeys} white keys from ${read.phase}, confidence ${(read.confidence * 100).toFixed(0)}%`;
 }
 
 function startLoop(
@@ -201,6 +200,7 @@ function startLoop(
   };
   const tracker = capturing ? createTracker(capturing, { onMeasured }) : null;
   const boardReader = createBoardReader();
+  const keyReader = createKeyReader();
   const labeller = createLabeller();
   const follower = createFollower();
   let boardHeld: TrackerState | null = null;
@@ -293,10 +293,23 @@ function startLoop(
       if (state !== boardHeld) {
         boardHeld = state;
         boardReader.moved(now);
+        keyReader.moved(now);
       }
       const space = keybedSpace({ quad: state.quad }, size);
       if (space) {
         boardReader.look(space, video, size, now);
+      }
+      keyReader.look(video, state.quad, size, now);
+      if (hud.state.keys) {
+        const found = keyReader.last();
+        if (found) {
+          drawKeys(
+            ctx,
+            projectKeys(found, labelState?.quad ?? state.quad),
+            box.w,
+            box.h,
+          );
+        }
       }
     } else {
       boardHeld = null;
@@ -331,7 +344,7 @@ function startLoop(
       );
       hud.status("keybed", trackerStatusText(state));
       if (state.kind === "held") {
-        hud.status("board", boardStatusText(boardReader.last()));
+        hud.status("board", keyStatusText(keyReader.last()));
       }
       hud.status("label", `${labeller.saved()} saved`);
       labeller.look(

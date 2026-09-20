@@ -21,6 +21,12 @@ export type BoardRead = {
     readonly kind: "unsure";
     readonly reason: string;
 };
+/** Otsu's split: the brightness cut that separates a stretch's readings
+ * furthest apart, which on a keybed is the cut between black and white keys. */
+export declare function split(level: readonly number[]): {
+    readonly at: number;
+    readonly separation: number;
+};
 /** Which keyboard is in front of the camera, read off its black keys: their
  * spacing gives the key count and phase, and every depth into the keybed is
  * tried since a low camera compresses the far edge unpredictably. Colour

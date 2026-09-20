@@ -4,6 +4,7 @@ export interface HudState {
   hands: boolean;
   input: boolean;
   label: boolean;
+  keys: boolean;
 }
 
 export interface Hud {
@@ -82,6 +83,7 @@ export function createHud(): Hud {
     hands: false,
     input: false,
     label: false,
+    keys: false,
   };
   const panel = document.createElement("div");
   Object.assign(panel.style, PANEL_STYLE);
@@ -175,6 +177,15 @@ export function createHud(): Hud {
       state.input = on;
     },
   );
+  toggle(
+    detectRow,
+    "keys",
+    "draw the detected keys over the video",
+    () => state.keys,
+    (on) => {
+      state.keys = on;
+    },
+  );
 
   toggle(
     capture,
@@ -227,6 +238,9 @@ export function createHud(): Hud {
     },
     a: () => {
       state.label = !state.label;
+    },
+    k: () => {
+      state.keys = !state.keys;
     },
   };
   window.addEventListener("keydown", (event) => {

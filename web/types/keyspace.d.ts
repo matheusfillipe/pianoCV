@@ -42,6 +42,9 @@ export declare function keyBand(pitch: number, board: Board): {
 export declare function boardOf(range: PitchRange): Board;
 /** Four corners of a key's face, in image points. */
 export type Bar = readonly [Point, Point, Point, Point];
+/** How much of the keybed's depth a black key takes, measured from the far
+ * edge where the black keys start. */
+export declare const blackKeyDepth = 0.62;
 /** The face of one key, flat on the instrument. */
 export declare function keyFace(space: KeybedSpace, pitch: number, board: Board): Bar | null;
 /** Every pitch the board carries, low to high. */

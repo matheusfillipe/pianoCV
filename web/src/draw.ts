@@ -3,6 +3,7 @@ import {
   type HandLandmarkerResult,
 } from "@mediapipe/tasks-vision";
 import type { Point } from "./homography";
+import type { DetectedKey } from "./keystrip";
 
 const HANDEDNESS_COLORS: Record<string, string> = {
   Left: "#38bdf8",
@@ -101,6 +102,33 @@ export function drawQuad(
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
     ctx.fillText(label, back.x, back.y - 6);
+  }
+}
+
+const WHITE_KEY_COLOR = "rgba(226,232,240,0.85)";
+const BLACK_KEY_COLOR = "rgba(56,189,248,0.9)";
+
+export function drawKeys(
+  ctx: CanvasRenderingContext2D,
+  keys: readonly DetectedKey[],
+  w: number,
+  h: number,
+): void {
+  for (const key of keys) {
+    ctx.strokeStyle = key.black ? BLACK_KEY_COLOR : WHITE_KEY_COLOR;
+    ctx.lineWidth = key.black ? 2 : 1;
+    ctx.beginPath();
+    for (const [i, corner] of key.bar.entries()) {
+      const x = corner.x * w;
+      const y = corner.y * h;
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.closePath();
+    ctx.stroke();
   }
 }
 
