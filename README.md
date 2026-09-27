@@ -26,18 +26,40 @@ They were trained with [PyTorch](https://pytorch.org) on thousands of fake piano
 [MediaPipe](https://ai.google.dev/edge/mediapipe) so the glow stays behind them, and the
 notes come in through [Web MIDI](https://developer.mozilla.org/docs/Web/API/Web_MIDI_API).
 
+## The models
+
+The trained weights are on Hugging Face at
+[mattf/pianoCV](https://huggingface.co/mattf/pianoCV), with a
+[model card](https://huggingface.co/mattf/pianoCV) that explains what each one takes and
+returns:
+
+- [`keyseg.onnx`](https://huggingface.co/mattf/pianoCV/resolve/main/keyseg.onnx), the piano
+  segmentation model that marks every key
+- [`keybed_seg2.onnx`](https://huggingface.co/mattf/pianoCV/resolve/main/keybed_seg2.onnx),
+  which finds roughly where the keyboard is
+- [`keymatch.onnx`](https://huggingface.co/mattf/pianoCV/resolve/main/keymatch.onnx), which
+  reads the edges of the keys
+
+They are plain [ONNX](https://onnx.ai) files, so you can use them from any language with
+[ONNX Runtime](https://onnxruntime.ai).
+
 ## Run it yourself
 
-You need [Bun](https://bun.sh) and [uv](https://docs.astral.sh/uv/).
+Install [Bun](https://bun.sh/docs/installation) and
+[uv](https://docs.astral.sh/uv/getting-started/installation/), then:
 
 ```
+git clone https://github.com/matheusfillipe/pianoCV.git
+cd pianoCV
 make install
 make model
 make dev
 ```
 
-Then open http://localhost:5273/ and allow the camera. `make help` shows everything else,
-including how to render training pianos and train the models.
+`make install` sets up the browser app and the Python tools, `make model` downloads the three
+models from Hugging Face, and `make dev` starts the app. Open http://localhost:5273/, allow the
+camera, and point it at a keyboard. `make help` shows everything else, including how to render
+training pianos and train the models yourself.
 
 ## Licence
 
