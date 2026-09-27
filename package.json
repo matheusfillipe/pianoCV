@@ -1,7 +1,7 @@
 {
-  "name": "keybed",
+  "name": "pianocv",
   "version": "0.1.0",
-  "description": "Finds a piano keybed in a camera image and solves its 3D pose",
+  "description": "Finds every key of a piano or keyboard in a camera image and solves its 3D pose, live in the browser",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {

@@ -5,6 +5,7 @@ export interface HudState {
   input: boolean;
   label: boolean;
   keys: boolean;
+  glow: boolean;
 }
 
 export interface Hud {
@@ -84,6 +85,7 @@ export function createHud(): Hud {
     input: false,
     label: false,
     keys: false,
+    glow: false,
   };
   const panel = document.createElement("div");
   Object.assign(panel.style, PANEL_STYLE);
@@ -186,6 +188,15 @@ export function createHud(): Hud {
       state.keys = on;
     },
   );
+  toggle(
+    detectRow,
+    "glow",
+    "light the key each note plays",
+    () => state.glow,
+    (on) => {
+      state.glow = on;
+    },
+  );
 
   toggle(
     capture,
@@ -241,6 +252,9 @@ export function createHud(): Hud {
     },
     k: () => {
       state.keys = !state.keys;
+    },
+    g: () => {
+      state.glow = !state.glow;
     },
   };
   window.addEventListener("keydown", (event) => {

@@ -6,11 +6,11 @@ import numpy as np
 import pytest
 import torch
 
-import kvt.gridtest as gridtest
-import kvt.jitter as jitter
-from kvt.jitter import Filter
-from kvt.model import MASK_SIZE
-from kvt.segnet2 import KeybedSegNet2
+import pianocv.gridtest as gridtest
+import pianocv.jitter as jitter
+from pianocv.jitter import Filter
+from pianocv.model import MASK_SIZE
+from pianocv.segnet2 import KeybedSegNet2
 
 KEYBED = np.array([[100.0, 200.0], [500.0, 190.0], [505.0, 250.0], [104.0, 262.0]])
 
@@ -52,7 +52,7 @@ class _Clip:
 def test_measure_clip_reports_a_still_keybed_as_still(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: Filter
 ) -> None:
-    monkeypatch.setattr("kvt.jitter.cv2.VideoCapture", _Clip)
+    monkeypatch.setattr("pianocv.jitter.cv2.VideoCapture", _Clip)
     result = jitter.measure_clip(
         Drawn(pretrained=False), tmp_path / "clip.webm", KEYBED, mode, dump_dir=tmp_path
     )
@@ -68,7 +68,7 @@ def test_measure_clip_reports_a_still_keybed_as_still(
 def test_measure_clip_constrained_votes_a_focal_and_stays_on_the_keybed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr("kvt.jitter.cv2.VideoCapture", _Clip)
+    monkeypatch.setattr("pianocv.jitter.cv2.VideoCapture", _Clip)
     result = jitter.measure_clip(
         Drawn(pretrained=False), tmp_path / "clip.webm", KEYBED, "accumulate", constrained=True
     )
@@ -102,8 +102,8 @@ def test_jitter_main_runs_over_recordings(
             }
         )
     )
-    monkeypatch.setattr("kvt.jitter.cv2.VideoCapture", _Clip)
-    monkeypatch.setattr("kvt.jitter.load_seg2", lambda _: Drawn(pretrained=False))
+    monkeypatch.setattr("pianocv.jitter.cv2.VideoCapture", _Clip)
+    monkeypatch.setattr("pianocv.jitter.load_seg2", lambda _: Drawn(pretrained=False))
     monkeypatch.setattr(
         "sys.argv",
         ["jitter", "--recordings-dir", str(recordings), "--filter", "raw", "--filter", "both"],
@@ -127,7 +127,7 @@ def test_gridtest_main_groups_by_pose(
                 }
             )
         )
-    monkeypatch.setattr("kvt.gridtest.load_seg2", lambda _: Drawn(pretrained=False))
+    monkeypatch.setattr("pianocv.gridtest.load_seg2", lambda _: Drawn(pretrained=False))
     monkeypatch.setattr("sys.argv", ["gridtest", "--grid-dir", str(tmp_path)])
     gridtest.main()
     out = capsys.readouterr().out

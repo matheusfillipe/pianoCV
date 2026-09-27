@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
 
-from kvt.detect import find_keybed, find_keybed_pattern
-from kvt.homography import find_homography
+from pianocv.detect import find_keybed, find_keybed_pattern
+from pianocv.homography import find_homography
 
 BLACK_OFFSETS = (0.60, 1.75, 3.60, 4.63, 5.66)
 BLACK_WIDTH = 0.58

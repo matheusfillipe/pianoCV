@@ -1,6 +1,6 @@
 import type { Point } from "./homography";
 
-const STORAGE_KEY = "kvt-corners";
+const STORAGE_KEY = "pianocv-corners";
 const HIT_RADIUS_PX = 24;
 const HANDLE_RADIUS_PX = 9;
 const HINT_TEXT = "drag corners onto the keyboard, press c to hide";

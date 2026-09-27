@@ -1,10 +1,10 @@
-# keyboard-vis-tracking
+# pianoCV
 
 Spike: automatic video editing for piano video. A camera watches hands on a real keyboard; the browser pipeline detects the keybed, solves its 3D plane, and composites kinesthesia's MIDI-driven visuals into the original camera perspective. CV does geometry only, never notes. The runtime is browser-only (web/). Python (tools/) is the offline lab. Eventual home: kinesthesia.
 
 ## Where things live
 - web/ TS browser app (Vite + MediaPipe tasks-vision): the runtime
-- tools/ python uv package kvt: offline lab (synthetic data, frame validation, detector training)
+- tools/ python uv package pianocv: offline lab (synthetic data, frame validation, detector training)
 - docs/ untracked local research notes
 - The Makefile is the single canonical interface for all checks; CI and pre-commit both call it.
 

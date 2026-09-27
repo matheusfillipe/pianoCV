@@ -7,7 +7,7 @@ import { createServer } from "vite";
 const webRoot = new URL(".", import.meta.url).pathname;
 const root = new URL("..", import.meta.url).pathname;
 const samples = Math.min(
-  Math.max(Number(process.env.KVT_GRID_SAMPLES ?? 105), 1),
+  Math.max(Number(process.env.PIANOCV_GRID_SAMPLES ?? 105), 1),
   105,
 );
 const run = `browser-grid-${new Date()
@@ -67,7 +67,7 @@ if (!address || typeof address === "string")
   throw new Error("vite dev server did not bind a port");
 const port = address.port;
 
-const profile = await mkdtemp(join(tmpdir(), "kvt-grid-chrome-"));
+const profile = await mkdtemp(join(tmpdir(), "pianocv-grid-chrome-"));
 let headless;
 try {
   const browser = browserPath();

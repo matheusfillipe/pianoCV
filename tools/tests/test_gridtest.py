@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 import torch
 
-from kvt.gridtest import _error, score_grid
-from kvt.model import MASK_SIZE
-from kvt.segnet2 import KeybedSegNet2
+from pianocv.gridtest import _error, score_grid
+from pianocv.model import MASK_SIZE
+from pianocv.segnet2 import KeybedSegNet2
 
 KEYBED = np.array([[100.0, 200.0], [500.0, 190.0], [505.0, 250.0], [104.0, 262.0]])
 
@@ -54,7 +54,7 @@ def test_score_grid_reads_pose_from_the_sidecar(
 
     model_path = tmp_path / "m.pt"
     torch.save(Drawn(pretrained=False).state_dict(), model_path)
-    monkeypatch.setattr("kvt.gridtest.load_seg2", lambda _: Drawn(pretrained=False))
+    monkeypatch.setattr("pianocv.gridtest.load_seg2", lambda _: Drawn(pretrained=False))
     rows = score_grid(model_path, tmp_path)
     assert len(rows) == 1
     assert rows[0]["elevation"] == 40.0

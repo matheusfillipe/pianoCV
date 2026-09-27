@@ -5,8 +5,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from kvt.dataset import Frame
-from kvt.train import _fine_tune_items, train_model
+from pianocv.dataset import Frame
+from pianocv.train import _fine_tune_items, train_model
 
 STANDIN_QUAD = [[16.0, 12.0], [48.0, 12.0], [48.0, 36.0], [16.0, 36.0]]
 

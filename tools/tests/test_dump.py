@@ -3,8 +3,8 @@ from pathlib import Path
 
 import cv2
 
-from kvt.dump import _one, dump
-from kvt.segnet2 import SEG2_INPUT_SIZE
+from pianocv.dump import _one, dump
+from pianocv.segnet2 import SEG2_INPUT_SIZE
 
 
 def test_dump_writes_a_frame_beside_its_sidecar(tmp_path: Path) -> None:

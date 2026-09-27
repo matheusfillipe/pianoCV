@@ -4,9 +4,9 @@ import cv2
 import numpy as np
 import torch
 
-from kvt.evaluate import seg2_detector
-from kvt.model import MASK_SIZE
-from kvt.segnet2 import (
+from pianocv.evaluate import seg2_detector
+from pianocv.model import MASK_SIZE
+from pianocv.segnet2 import (
     SEG2_INPUT_SIZE,
     KeybedSegNet2,
     load_seg2,

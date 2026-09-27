@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from kvt.refine_edges import refine_quad
+from pianocv.refine_edges import refine_quad
 
 QUAD = np.array([[90.0, 200.0], [520.0, 150.0], [530.0, 250.0], [96.0, 300.0]])
 

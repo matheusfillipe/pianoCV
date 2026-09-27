@@ -3,9 +3,10 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 
-from kvt.bake import bake
-from kvt.model import INPUT_SIZE
+from pianocv.bake import bake
+from pianocv.model import INPUT_SIZE
 
 QUAD = [
     {"x": 0.1, "y": 0.4},
@@ -81,3 +82,29 @@ def test_bake_clears_frames_from_a_previous_corpus(tmp_path: Path) -> None:
 
     bake(source, out)
     assert [p.name for p in (out / "frames").glob("*.png")] == ["new.png"]
+
+
+def test_bake_merges_several_synth_directories_into_one_corpus(tmp_path: Path) -> None:
+    keys_only = tmp_path / "synth"
+    keys_only.mkdir()
+    _synth_frame(keys_only, "a")
+    cased = tmp_path / "synth-case"
+    cased.mkdir()
+    _synth_frame(cased, "b")
+    out = tmp_path / "corpus-mix"
+
+    assert bake([keys_only, cased], out) == 2
+    frames = sorted((out / "frames").glob("*.png"))
+    assert [f.stem for f in frames] == ["a", "b"]
+
+
+def test_bake_fails_loudly_on_a_stem_shared_between_directories(tmp_path: Path) -> None:
+    first = tmp_path / "synth"
+    first.mkdir()
+    _synth_frame(first, "dup")
+    second = tmp_path / "synth-case"
+    second.mkdir()
+    _synth_frame(second, "dup")
+
+    with pytest.raises(ValueError, match="dup"):
+        bake([first, second], tmp_path / "corpus-mix")

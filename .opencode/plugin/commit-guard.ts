@@ -15,7 +15,7 @@ export default (async ({ directory }) => {
       if (typeof command !== "string") return
       if (!/\bgit\s+commit\b/.test(command)) return
       if (!existsSync(marker)) {
-        throw new Error("keyboard-vis-tracking: commit blocked. Run /rev first.")
+        throw new Error("pianoCV: commit blocked. Run /rev first.")
       }
       rmSync(marker, { force: true })
     },

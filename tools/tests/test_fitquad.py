@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from kvt.fitquad import quad_from_mask
+from pianocv.fitquad import quad_from_mask
 
 QUAD = np.array([[90.0, 210.0], [520.0, 150.0], [545.0, 240.0], [100.0, 320.0]])
 

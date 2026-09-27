@@ -6,7 +6,7 @@ import { pointInQuad } from "./stillness";
 declare global {
   interface Window {
     // recent update() costs in ms, for the lab to read off a live page rather than guess
-    kvtFollowMs?: number[];
+    pianocvFollowMs?: number[];
   }
 }
 const FOLLOW_MS_HISTORY = 300;
@@ -368,8 +368,8 @@ export function createFollower(): Follower {
       const started = performance.now();
       const gray = extract(frame, workAt);
       const estimate = estimateMotion(previous, points, gray);
-      window.kvtFollowMs ??= [];
-      const history = window.kvtFollowMs;
+      window.pianocvFollowMs ??= [];
+      const history = window.pianocvFollowMs;
       history.push(performance.now() - started);
       if (history.length > FOLLOW_MS_HISTORY) {
         history.shift();

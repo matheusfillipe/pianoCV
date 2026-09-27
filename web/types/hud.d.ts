@@ -5,6 +5,7 @@ export interface HudState {
     input: boolean;
     label: boolean;
     keys: boolean;
+    glow: boolean;
 }
 export interface Hud {
     readonly state: HudState;

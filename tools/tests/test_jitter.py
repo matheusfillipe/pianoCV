@@ -2,15 +2,15 @@ import cv2
 import numpy as np
 import torch
 
-from kvt.jitter import (
+from pianocv.jitter import (
     OneEuro,
     _align,
     detect_quad,
     keybed_shaped,
     quad_from_probability,
 )
-from kvt.model import MASK_SIZE
-from kvt.segnet2 import KeybedSegNet2
+from pianocv.model import MASK_SIZE
+from pianocv.segnet2 import KeybedSegNet2
 
 QUAD = np.array([[100.0, 200.0], [500.0, 190.0], [505.0, 250.0], [104.0, 262.0]])
 

@@ -7,11 +7,11 @@ import cv2
 import numpy as np
 import pytest
 
-from kvt.dataset import Frame, extract
-from kvt.dataset import main as dataset_main
-from kvt.evaluate import evaluate_frame, fine_tuned_frames, main, net_detector, run
-from kvt.model import KeybedNet
-from kvt.render import render_sample
+from pianocv.dataset import Frame, extract
+from pianocv.dataset import main as dataset_main
+from pianocv.evaluate import evaluate_frame, fine_tuned_frames, main, net_detector, run
+from pianocv.model import KeybedNet
+from pianocv.render import render_sample
 
 IMAGE_SIZE = (320, 240)
 KEYBED = (60, 80, 260, 104)
@@ -168,7 +168,7 @@ def test_run_filters_repeatable_source_stems(tmp_path: Path) -> None:
         Frame(image_path, corners, "keep", "snap"),
         Frame(image_path, corners, "drop", "snap"),
     ]
-    with patch("kvt.evaluate.load_frames", return_value=frames):
+    with patch("pianocv.evaluate.load_frames", return_value=frames):
         results = run(frames_dir, out_dir, source_stems={"keep"})
     assert [result.source_stem for result in results] == ["keep"]
 

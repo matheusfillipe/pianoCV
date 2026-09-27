@@ -5,7 +5,7 @@ export interface Point {
 
 export type Homography = number[];
 
-function solve(matrix: number[][], rhs: number[]): number[] {
+export function solve(matrix: number[][], rhs: number[]): number[] {
   const n = rhs.length;
   const rows = matrix.map((row, i) => [...row, rhs[i]]);
   for (let col = 0; col < n; col += 1) {

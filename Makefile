@@ -1,16 +1,18 @@
 BUN := bun --cwd=web
 UV := uv run --project tools
-MODEL_REPO := mattf/keybed-seg
+MODEL_REPO := mattf/pianoCV
 KAGGLE_SEG2_OUTPUT_DIR ?= data/models/kaggle-keybed-seg2-real
 PORT ?= 5274
 
 .DEFAULT_GOAL := help
 .PHONY: help install fix precommit check list-lab-data lab-extract lab-train lab-detect \
-        lab-seg2-kaggle-run lab-seg2-kaggle-output lab-browser-gridtest \
+        lab-seg2-kaggle-run lab-seg2-kaggle-output lab-browser-gridtest lab-keys-eval \
+        lab-synth-generate \
         tools-fix tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
-        build web-typecheck web-lint web-fix web-test web-build dev dev-alt model clean lab-export \
-        lab-evaluate lab-real-seg2-prepare lab-compare
+        build web-typecheck web-lint web-fix web-test web-build dev dev-alt model site clean lab-export \
+        lab-evaluate lab-real-seg2-prepare lab-relabel-keys lab-compare lab-trainseg2 lab-dataset-push \
+        lab-keymatch-train lab-keymatch-push lab-keyseg-train
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -52,13 +54,13 @@ tools-coverage: ## run python tests with coverage (pytest-cov)
 	cd tools && uv run pytest --cov --cov-report=term-missing
 
 tools-dead-code: ## detect dead python code (vulture)
-	cd tools && uv run vulture src/kvt tests
+	cd tools && uv run vulture src/pianocv tests
 
 tools-unused-deps: ## detect unused python dependencies (deptry)
 	cd tools && uv run deptry .
 
 tools-security: ## scan python for security issues (bandit)
-	cd tools && uv run bandit -c pyproject.toml -r src/kvt
+	cd tools && uv run bandit -c pyproject.toml -r src/pianocv
 
 tools-audit: ## audit python dependencies for vulnerabilities (pip-audit)
 	cd tools && uv run --with pip pip-audit
@@ -90,46 +92,63 @@ dev: ## run the web dev server (vite)
 dev-alt: ## run the web dev server on another port, for when 5273 is already held by a different checkout (make dev-alt PORT=5274)
 	$(BUN) run dev -- --port $(PORT)
 
-model: ## download the trained detector from hugging face into web/public
-	curl -fL --create-dirs -o web/public/keybed_seg2.onnx \
-		https://huggingface.co/$(MODEL_REPO)/resolve/main/keybed_seg2.onnx
-	@ls -lh web/public/keybed_seg2.onnx
+MODELS := keybed_seg2.onnx keymatch.onnx keyseg.onnx
+
+model: ## download the trained models from hugging face into web/public
+	@for model in $(MODELS); do \
+		curl -fL --create-dirs -o web/public/$$model \
+			https://huggingface.co/$(MODEL_REPO)/resolve/main/$$model || exit 1; \
+	done
+	@ls -lh $(addprefix web/public/,$(MODELS))
+
+BASE ?= /
+
+site: ## build the static site with its models into web/dist, served under BASE (make site BASE=/pianoCV/)
+	$(BUN) install --frozen-lockfile
+	$(MAKE) model
+	PIANOCV_BASE=$(BASE) $(BUN) run build
 
 list-lab-data: ## list saved lab recordings (data/recordings)
 	mkdir -p data/recordings && ls -la data/recordings
 
 lab-extract: ## extract labeled frames from recordings (data/recordings -> data/frames)
-	cd tools && uv run python -m kvt.dataset
+	cd tools && uv run python -m pianocv.dataset
 
 lab-train: ## train detector on synthetic renders then fine-tune on real rec frames (data/models/keybed_net.pt)
-	cd tools && uv run python -m kvt.train
+	cd tools && uv run python -m pianocv.train
 
 lab-export: ## export the trained detector to web/public/keybed_net.onnx
-	cd tools && uv run python -m kvt.export
+	cd tools && uv run python -m pianocv.export
 
 lab-train-seg: ## train the segmentation detector on renders plus data/synth (data/models/keybed_seg.pt)
-	cd tools && uv run python -m kvt.trainseg $(ARGS)
+	cd tools && uv run python -m pianocv.trainseg $(ARGS)
 
 lab-export-seg: ## export the trained segmentation detector to web/public/keybed_seg.onnx
-	cd tools && uv run python -m kvt.export --seg
+	cd tools && uv run python -m pianocv.export --seg
 
 lab-dump: ## render procedural frames to disk (data/procedural)
-	cd tools && uv run python -m kvt.dump $(ARGS)
+	cd tools && uv run python -m pianocv.dump $(ARGS)
+
+lab-synth-generate: ## render synthetic keyboards with a randomised case into data/synth-case, unattended (PIANOCV_GEN_FRAMES, default 8000)
+	cd web && bun gen-runner.mjs
 
 lab-export-seg2: ## export the pretrained segmentation detector to web/public/keybed_seg2.onnx
-	cd tools && uv run python -m kvt.export --seg2 $(ARGS)
+	cd tools && uv run python -m pianocv.export --seg2 $(ARGS)
 
 lab-jitter: ## measure how much the detection moves on static recordings
-	cd tools && uv run python -m kvt.jitter $(ARGS)
+	cd tools && uv run python -m pianocv.jitter $(ARGS)
 
 lab-gridtest: ## score the detector per pose on the deterministic render grid (data/grid)
-	cd tools && uv run python -m kvt.gridtest $(ARGS)
+	cd tools && uv run python -m pianocv.gridtest $(ARGS)
 
 lab-browser-gridtest: ## run the served browser ONNX model over the deterministic 3D grid
 	cd web && bun grid-eval-runner.mjs
 
-lab-corpus-bake: ## bake data/synth down to the net's input size (data/corpus)
-	cd tools && uv run python -m kvt.bake
+lab-keys-eval: ## run the live keyboard pipeline headless on every saved recording and report hold time, trim, key count and black-key alignment
+	cd web && bun keys-eval-runner.mjs
+
+lab-corpus-bake: ## bake data/synth down to the net's input size (data/corpus); ARGS="--synth-dir ... --out-dir ..." to bake other directories, repeat --synth-dir to merge several
+	cd tools && uv run python -m pianocv.bake $(ARGS)
 
 lab-corpus-zip: lab-corpus-bake ## pack data/corpus into data/keybed-corpus.zip for upload to a training host
 	rm -f data/keybed-corpus.zip
@@ -137,16 +156,34 @@ lab-corpus-zip: lab-corpus-bake ## pack data/corpus into data/keybed-corpus.zip 
 	@ls -lh data/keybed-corpus.zip
 
 lab-detect: lab-extract ## evaluate keybed detector on extracted frames, split by fine-tuned vs held out
-	cd tools && uv run python -m kvt.evaluate $(ARGS)
+	cd tools && uv run python -m pianocv.evaluate $(ARGS)
 
 lab-evaluate: ## evaluate a detector on already-extracted labelled frames
-	cd tools && uv run python -m kvt.evaluate $(ARGS)
+	cd tools && uv run python -m pianocv.evaluate $(ARGS)
 
 lab-real-seg2-prepare: ## prepare real labelled frames for SegNet2 fine-tuning
-	cd tools && uv run python -m kvt.realseg2 $(ARGS)
+	cd tools && uv run python -m pianocv.realseg2 $(ARGS)
+
+lab-relabel-keys: ## relabel the real frames and each recording's truth keys-only, with the live far-edge trim (data/real-seg2-keys, data/recordings-keys-truth.json)
+	cd web && bun relabel-keys-runner.mjs
 
 lab-compare: ## compare onnx keybed detectors on the render grid and on real recordings
-	$(UV) python -m kvt.compare $(ARGS)
+	$(UV) python -m pianocv.compare $(ARGS)
+
+lab-trainseg2: ## fine-tune KeybedSegNet2 on data/corpus and data/real-seg2 (data/models/seg2-tuned)
+	cd tools && uv run python -m pianocv.trainseg2 $(ARGS)
+
+lab-dataset-push: ## pack data/corpus, data/real-seg2 and pianocv into a bundle and upload it to an S3 bucket with mc (ARGS="--alias <mc alias> --version <v>")
+	cd tools && uv run python -m pianocv.datasetpush $(ARGS)
+
+lab-keymatch-train: ## train the key matcher locally on data/synth-keys
+	cd tools && uv run python -m pianocv.trainkeymatch $(ARGS)
+
+lab-keyseg-train: ## train the per-key segmenter locally on data/synth-keys; ARGS="--preview 12" draws labels only
+	cd tools && uv run python -m pianocv.trainkeyseg $(ARGS)
+
+lab-keymatch-push: ## pack data/synth-keys and pianocv into a bundle and upload it to an S3 bucket with mc (ARGS="--alias <mc alias> --version <v>")
+	cd tools && uv run python -m pianocv.keymatchpush $(ARGS)
 
 lab-seg2-kaggle-run: ## push and start the private real-frame Seg2 fine-tuning notebook
 	kaggle kernels push -p tools/kaggle/keybed-seg2

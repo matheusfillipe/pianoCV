@@ -4,7 +4,7 @@
 // keybed rectangle under a rotation and a translation has six, and every quad that shape can
 // produce is a legal keybed. The six are fitted to the mask's whole boundary at once, so the
 // far end is placed by the outline plus the known proportions, never by the few pixels at the
-// thin end. Port of tools/src/kvt/rectfit.py, measured there on the pose grid and the clips.
+// thin end. Port of tools/src/pianocv/rectfit.py, measured there on the pose grid and the clips.
 
 import { findHomography, type Point } from "./homography";
 import { canonicalQuad, keybedDepth, WHITE_KEY_COUNT } from "./pose";

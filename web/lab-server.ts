@@ -3,13 +3,17 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 
-const ROUTE = /^\/lab\/save\/(?:(synth|grid|evaluations)\/)?([^/]+)$/;
-const LIST_ROUTE = /^\/lab\/list\/(grid)$/;
-const DATA_ROUTE = /^\/lab\/data\/(grid)\/([^/?]+)$/;
+const ROUTE =
+  /^\/lab\/save\/(?:(synth|synth-case|synth-keys|grid|evaluations)\/)?([^/]+)$/;
+const LIST_ROUTE = /^\/lab\/list\/(grid|synth|synth-case|synth-keys)$/;
+const DATA_ROUTE =
+  /^\/lab\/data\/(grid|synth|synth-case|synth-keys)\/([^/?]+)$/;
 const CLIP_ROUTE = /^\/lab\/clip\/([^/?]+)$/;
 const DIRS: Record<string, string> = {
   recordings: "recordings",
   synth: "synth",
+  "synth-case": "synth-case",
+  "synth-keys": "synth-keys",
   grid: "grid",
   evaluations: "evaluations",
 };
@@ -18,7 +22,7 @@ const UNSAFE_NAME = /[^a-zA-Z0-9._-]/g;
 export function labServer(): Plugin {
   const dataDir = join(fileURLToPath(new URL("..", import.meta.url)), "data");
   return {
-    name: "kvt-lab-server",
+    name: "pianocv-lab-server",
     apply: "serve",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {

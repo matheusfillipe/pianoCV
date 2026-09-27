@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
-from kvt.dataset import (
+from pianocv.dataset import (
     canonical_quad,
     extract,
     load_frames,

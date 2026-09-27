@@ -40,8 +40,9 @@ node_modules/
 # tooling local state
 .playwright-mcp/
 
-# weights are distributed on their own, never through git; the CC-BY keybed mesh ships here
-# because the generator page needs it to render at all
+# weights are distributed on their own, never through git
 web/public/*.onnx
 web/public/*.onnx.data
-!web/public/models/
+
+# workflows for a private training cluster, local only
+tools/argo/

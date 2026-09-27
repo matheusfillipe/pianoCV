@@ -3,7 +3,6 @@ import {
   type HandLandmarkerResult,
 } from "@mediapipe/tasks-vision";
 import type { Point } from "./homography";
-import type { DetectedKey } from "./keystrip";
 
 const HANDEDNESS_COLORS: Record<string, string> = {
   Left: "#38bdf8",
@@ -110,7 +109,7 @@ const BLACK_KEY_COLOR = "rgba(56,189,248,0.9)";
 
 export function drawKeys(
   ctx: CanvasRenderingContext2D,
-  keys: readonly DetectedKey[],
+  keys: readonly { readonly black: boolean; readonly bar: readonly Point[] }[],
   w: number,
   h: number,
 ): void {

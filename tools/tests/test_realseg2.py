@@ -4,7 +4,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from kvt.realseg2 import prepare
+from pianocv.realseg2 import prepare
 
 
 def _frame(path: Path, color: tuple[int, int, int]) -> None:

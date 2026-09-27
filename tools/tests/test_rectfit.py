@@ -1,10 +1,10 @@
 import cv2
 import numpy as np
 
-from kvt.dataset import align
-from kvt.model import MASK_SIZE
-from kvt.pose import DEPTH_UNITS, WHITE_KEY_COUNT
-from kvt.rectfit import boundary_points, fit_rectangle, snap_to_gradient
+from pianocv.dataset import align
+from pianocv.model import MASK_SIZE
+from pianocv.pose import DEPTH_UNITS, WHITE_KEY_COUNT
+from pianocv.rectfit import boundary_points, fit_rectangle, snap_to_gradient
 
 WIDTH, HEIGHT = 640, 480
 # the mask is 144 cells across the frame, so the boundary is known to about one cell

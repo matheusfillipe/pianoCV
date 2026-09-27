@@ -210,7 +210,7 @@ async function evaluateGrid(): Promise<{
     setKeybedDepth(previousDepth);
   }
   return {
-    kind: "kvt-browser-grid-evaluation",
+    kind: "pianocv-browser-grid-evaluation",
     summary: stageSummary(rows),
     byElevation: groupedBy(rows, (row) => row.pose.elevation),
     byAbsAzimuth: groupedBy(rows, (row) => Math.abs(row.pose.azimuth)),

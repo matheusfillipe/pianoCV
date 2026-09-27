@@ -1,17 +1,14 @@
-# keybed
+# pianoCV
 
-A computer vision model, and the browser pipeline around it, that locates the keybed of a
-piano or electronic keyboard in a camera image and solves its position and orientation in 3D.
-
-The model is a small semantic segmentation network. It marks which pixels belong to the strip
-of white and black keys, and nothing else. On its own that gives you a rough blob, so the
-pipeline fits a rectangle of known real world proportions to it, which turns the blob into an
-actual pose: where the keyboard is, how it is tilted, and how far away it is.
+A set of small computer vision models, and the browser pipeline around them, that finds every
+key of a piano or electronic keyboard in a camera image, live, and solves where the keyboard
+sits in 3D.
 
 Everything runs in the browser. There is no server and nothing you record leaves your machine.
-It never listens to the music and never tries to work out which notes are being played. It
-solves geometry only, and what you get back is a plane you can draw anything onto, in the same
-perspective as the original video.
+It never listens to the music and never tries to work out which notes are played: it solves
+geometry only, and what you get back is every key's outline in the camera's own perspective,
+ready to draw anything onto. Play a MIDI keyboard into the page and the keys you press light
+up where they are in the picture.
 
 ## Run it
 
@@ -25,115 +22,65 @@ Then open http://localhost:5273/ and allow the camera. `make model` downloads th
 weights from Hugging Face, which are not stored in this repo. `make help` lists everything
 else.
 
-## How it finds the keyboard
+The key segmenter runs on the GPU through WebGPU where the browser has it, and on the CPU
+through WebAssembly where it does not.
 
-Every frame goes through the same steps. A small neural net looks at the picture and marks
-which pixels it thinks are keyboard. That gives a rough blob, not a shape, so the next part
-turns it into geometry: trace the outline of the blob, nudge each point onto the nearest
-real edge in the picture, then fit a rectangle to it.
+## How it finds the keys
 
-The rectangle is the important trick. A piano keyboard is a known shape, 36 white keys wide
-and a fixed depth, so instead of hunting for four independent corners the fit only has six
-numbers to find, which are the rotation and position of that one rigid rectangle in space.
-Every answer it can give is a shape a real keyboard could actually make, which is what stops
-the corners wandering off.
+Three models work together, and each one covers what the others are bad at.
 
-When nothing in the scene is moving, it averages the mask over several frames and eases the
-new answer toward the one it already had, so a still camera gives a still box instead of a
-box that shivers. Finally it checks the answer is believable, and draws nothing at all if it
-is not. Showing no box is better than showing a wrong one.
+1. **The keybed detector** finds roughly where the keyboard is. It is a MobileNetV3 U-Net that
+   marks keyboard pixels in a 288 x 288 frame, and the pipeline holds the region it finds
+   steady from frame to frame.
+2. **The key segmenter** looks at a rotated crop around that region and marks, for every pixel,
+   whether it is a white key, a black key, the gap between two white keys, or neither. The
+   outline of the keyboard comes from these key pixels, so a rough first region never bends
+   the keys.
+3. **The key matcher** reads the white-key gaps and the black-key edges along the keyboard, at
+   two depths. Where the gaps lean, the outline was skewed, so the pipeline straightens the
+   outline to the key lines and reads again.
 
-```mermaid
-flowchart TD
-    A[camera frame] --> B[squash to 288 x 288]
-    B --> C[segmentation net]
-    C --> D[144 x 144 keybed mask]
-    D --> E{is the scene still?}
-    E -->|yes| F[average the mask over 8 frames]
-    E -->|no| G
-    F --> G[trace the outline of the biggest blob]
-    G --> H[nudge each point onto the keys' edge in the picture]
-    H --> I[fit the known rectangle:<br/>six numbers, camera lens held fixed]
-    I --> J{is the scene still?}
-    J -->|yes| K[ease a quarter of the way toward the last answer]
-    J -->|no| L
-    K --> L[re-read both ends where the white keys stop]
-    L --> M{believable?<br/>shape, fit error, mask agreement, black keys visible}
-    M -->|yes| N[smooth it and draw]
-    M -->|no| O[draw nothing]
-```
+A real keyboard is not any arrangement of keys: it comes in a handful of sizes and always
+repeats the same pattern of two and three black keys. So the pipeline fits that pattern to
+what the models saw, which settles how many keys there are, which note each one is, and how
+high the black keys stand. Every key is always there and never drawn twice. Each key is then
+drawn with the shape the segmenter saw for it, black key sides included, and keeps the fitted
+shape wherever the segmenter could not see it cleanly.
 
-## Train it on your own piano
+## Train it
 
-The model that ships was trained on one instrument in one room, and it will do noticeably
-better on your piano if you retrain it on your own pictures. Here is the whole loop.
-
-**1. Make synthetic pictures.** Run `make dev`, open http://localhost:5273/gen.html and click
-*auto sweep*. It spins a 3D keyboard through thousands of angles, lighting setups and
-backgrounds, saving each frame with exact corner labels into `data/synth/`. Leave it running
-for a few minutes. Click *render test grid* once too, which fills `data/grid/` with a fixed
-set of poses you can score against later.
-
-**2. Film your real piano.** Open http://localhost:5273/ and point the camera at your
-keyboard. Turn on *manual* and drag the four handles onto the corners of the keys yourself.
-This part matters, because whatever the handles are sitting on becomes the label. Then press
-*rec* for a clip or *snap* for a still. Move the camera and repeat from several angles,
-distances and lighting conditions. Everything lands in `data/recordings/`.
-
-**3. Turn the clips into frames.**
+All three models are trained on synthetic renders, where every key's outline is known
+exactly. The generator builds a procedural keyboard with real proportions, varies its size,
+case, lighting, background and camera, and saves each frame with per-key labels.
 
 ```
-make lab-extract
+PIANOCV_GEN_OUT=synth-keys make lab-synth-generate
+make lab-keyseg-train
+make lab-keymatch-train
 ```
 
-This reads `data/recordings/` and writes labelled frames into `data/frames/`.
+The first command renders 8000 frames into `data/synth-keys/`, which takes about an hour.
+`PIANOCV_GEN_POSE="elevation=12,40&azimuth=45,110"` narrows the camera angles when you want
+more of a particular view. Each trainer writes a `.pt` checkpoint and a `.onnx` model under
+`data/models/`. Copy the `.onnx` files into `web/public/` and reload the page to run them. A
+GPU makes training take minutes instead of hours.
 
-**4. Pack the synthetic set for a GPU.**
+`make lab-keyseg-train ARGS="--preview 12"` draws the labels over a dozen crops without
+training, which is the quickest way to check them.
 
-```
-make lab-corpus-zip
-```
+The keybed detector trains with `make lab-trainseg2`, and the notebooks under `tools/kaggle/`
+train it on a hosted GPU.
 
-This produces `data/keybed-corpus.zip`.
+## Check it
 
-**5. Train.** The shipped model is a MobileNetV3 backbone with a U-Net head, and it is
-trained on a GPU using the notebook at `tools/kaggle/keybed-seg2-train.ipynb`. Upload
-`data/keybed-corpus.zip` and the `tools/src/kvt/` folder as two Kaggle datasets, attach both
-to that notebook, and run it. It saves one checkpoint per epoch.
+`make lab-keys-eval` runs the whole pipeline headless over every recording in
+`data/recordings/` and over synthetic renders, and reports the board it read, how sure it was,
+and how far each drawn key lands from the real one.
 
-If you would rather stay on your own machine, `make lab-train-seg` trains the older and
-smaller segmentation net locally with no GPU needed. It is less accurate, but the whole loop
-works without leaving your laptop.
+## The models
 
-**6. Pick the best checkpoint.** Download the checkpoints and score each one against the real
-frames from step 3:
-
-```
-make lab-detect ARGS="--method seg2 --model path/to/seg2-e12.pt"
-```
-
-Take the one with the lowest error on the held out split. Synthetic validation scores lie
-after the first few epochs, so always choose on real frames.
-
-**7. Ship it.** Copy your winner to `data/models/keybed_seg2.tuned.pt` and run:
-
-```
-make lab-export-seg2
-```
-
-That writes `web/public/keybed_seg2.onnx`, which is the file the browser loads. Reload the
-page and you are running your own model.
-
-**8. Check it did not get worse.** `make lab-jitter` measures how much the box wobbles on a
-clip where nothing moves, and `make lab-gridtest` scores accuracy pose by pose against the
-render grid from step 1.
-
-## The model
-
-The weights live at [mattf/keybed-seg](https://huggingface.co/mattf/keybed-seg) rather than
-in this repo. `make model` fetches them into `web/public/keybed_seg2.onnx`, which is the file
-the browser loads. It takes a 288 x 288 RGB image normalised on the usual ImageNet statistics
-and returns a 144 x 144 map of how likely each patch is to be keyboard.
+The weights live at [mattf/pianoCV](https://huggingface.co/mattf/pianoCV) rather than in this
+repo, and `make model` fetches them into `web/public/`.
 
 ## Notes on the data
 
@@ -142,6 +89,4 @@ because those files are pictures of your room.
 
 ## Licence
 
-Apache 2.0, except for `web/public/models/piano_keys.glb`, which is
-["Piano keys"](https://sketchfab.com/3d-models/piano-keys-a68d3e1b5fb4463992bdd02f8f4aa4db)
-from Sketchfab, used under CC BY. That mesh is what the generator page renders.
+Apache 2.0.

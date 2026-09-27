@@ -5,9 +5,9 @@ import cv2
 import numpy as np
 import pytest
 
-import kvt.compare as compare
-from kvt.dataset import canonical_quad, scan_recordings
-from kvt.model import MASK_SIZE
+import pianocv.compare as compare
+from pianocv.dataset import canonical_quad, scan_recordings
+from pianocv.model import MASK_SIZE
 
 KEYBED = np.array([[100.0, 200.0], [500.0, 190.0], [505.0, 250.0], [104.0, 262.0]])
 
@@ -83,6 +83,19 @@ def _write_recording(recordings_dir: Path, stem: str) -> None:
             }
         )
     )
+
+
+def _write_keys_truth(tmp_path: Path, entries: dict[str, np.ndarray]) -> Path:
+    path = tmp_path / "recordings-keys-truth.json"
+    path.write_text(
+        json.dumps(
+            {
+                stem: {"corners": [{"x": x / 640.0, "y": y / 480.0} for x, y in quad]}
+                for stem, quad in entries.items()
+            }
+        )
+    )
+    return path
 
 
 def test_jitter_steps_on_a_known_sequence() -> None:
@@ -203,13 +216,54 @@ def test_evaluate_recordings_tags_role_and_skips_unreadable(
     recordings_dir.mkdir()
     _write_recording(recordings_dir, "rec-good")
     _write_recording(recordings_dir, "rec-bad")
-    monkeypatch.setattr("kvt.compare.cv2.VideoCapture", _Clip)
+    monkeypatch.setattr("pianocv.compare.cv2.VideoCapture", _Clip)
     splits = {"held_out": ["rec-good.000000.png"]}
     results = compare.evaluate_recordings({"only": FakeSession()}, recordings_dir, splits, stride=1)
     assert [result.stem for result in results] == ["rec-good"]
     assert results[0].role == "held_out"
     assert results[0].frames == 6
     assert "skipping unreadable recording rec-bad" in capsys.readouterr().out
+
+
+def test_load_keys_truth_reads_corners_and_marks_skipped(tmp_path: Path) -> None:
+    path = tmp_path / "truth.json"
+    path.write_text(
+        json.dumps(
+            {
+                "rec-a": {"corners": [{"x": x / 640.0, "y": y / 480.0} for x, y in KEYBED]},
+                "rec-b": {"skipped": "far edge could not be measured"},
+            }
+        )
+    )
+    truth = compare.load_keys_truth(path)
+    assert truth["rec-b"] is None
+    assert truth["rec-a"] is not None
+    assert truth["rec-a"].shape == (4, 2)
+
+
+def test_load_keys_truth_returns_empty_when_file_is_missing(tmp_path: Path) -> None:
+    assert compare.load_keys_truth(tmp_path / "missing.json") == {}
+
+
+def test_evaluate_recordings_with_keys_truth_overrides_corners_and_skips_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    _write_recording(recordings_dir, "rec-good")
+    _write_recording(recordings_dir, "rec-other")
+    monkeypatch.setattr("pianocv.compare.cv2.VideoCapture", _Clip)
+    keys_truth = compare.load_keys_truth(_write_keys_truth(tmp_path, {"rec-good": KEYBED}))
+    results = compare.evaluate_recordings(
+        {"only": FakeSession()},
+        recordings_dir,
+        splits={},
+        stride=1,
+        truth_source="keys",
+        keys_truth=keys_truth,
+    )
+    assert [result.stem for result in results] == ["rec-good"]
+    assert "skipping rec-other: no keys-only truth" in capsys.readouterr().out
 
 
 def _clip_result(stem: str, role: compare.Role, iou: float) -> compare.ClipResult:
@@ -263,8 +317,8 @@ def test_main_runs_end_to_end(
     _write_recording(recordings_dir, "rec-good")
     splits_path = tmp_path / "splits.json"
     splits_path.write_text(json.dumps({"train": ["rec-good.000000.png"]}))
-    monkeypatch.setattr("kvt.compare.cv2.VideoCapture", _Clip)
-    monkeypatch.setattr("kvt.compare.ort.InferenceSession", lambda path: FakeSession())
+    monkeypatch.setattr("pianocv.compare.cv2.VideoCapture", _Clip)
+    monkeypatch.setattr("pianocv.compare.ort.InferenceSession", lambda path: FakeSession())
     monkeypatch.setattr(
         "sys.argv",
         [

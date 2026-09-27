@@ -7,7 +7,7 @@ import { createStillness, type Stillness } from "./stillness";
 
 /** Hunting runs the model often since nothing is held yet. Held only has to
  * ask whether the keyboard moved, so a glance runs far less often. */
-export const searchEveryMs = 350;
+export const searchEveryMs = 120;
 export const glanceEveryMs = 500;
 export const confirmEveryMs = 2500;
 // the model still gets the last word this often, so a drift or a swapped keyboard is caught

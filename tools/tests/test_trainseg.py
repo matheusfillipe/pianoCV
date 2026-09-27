@@ -5,9 +5,9 @@ import cv2
 import numpy as np
 import torch
 
-from kvt.dataset import Frame
-from kvt.model import MASK_SIZE, KeybedSegNet, load_seg_model, mask_targets, predict_mask
-from kvt.trainseg import frame_items, train_seg
+from pianocv.dataset import Frame
+from pianocv.model import MASK_SIZE, KeybedSegNet, load_seg_model, mask_targets, predict_mask
+from pianocv.trainseg import frame_items, train_seg
 
 QUAD = [[16.0, 12.0], [48.0, 12.0], [48.0, 36.0], [16.0, 36.0]]
 

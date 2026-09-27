@@ -1,7 +1,7 @@
 repos:
   - repo: local
     hooks:
-      - id: kvt-precommit
+      - id: pianocv-precommit
         name: make precommit (ruff format + lint, biome fix)
         entry: make precommit
         language: system

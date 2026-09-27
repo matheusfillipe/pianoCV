@@ -18,13 +18,13 @@ declare global {
   interface Window {
     // why the rectangle fit last declined, and the evidence it was given, for a lab session
     // watching a recording
-    kvtFit?: string;
-    kvtPoints?: Point[];
-    kvtPlain?: Point[];
-    kvtQuad?: Point[];
-    kvtRect?: Point[];
-    kvtProbability?: Float32Array;
-    kvtGray?: { gray: Float32Array; width: number; height: number };
+    pianocvFit?: string;
+    pianocvPoints?: Point[];
+    pianocvPlain?: Point[];
+    pianocvQuad?: Point[];
+    pianocvRect?: Point[];
+    pianocvProbability?: Float32Array;
+    pianocvGray?: { gray: Float32Array; width: number; height: number };
   }
 }
 
@@ -263,17 +263,17 @@ export async function createDetector(
       previousFit ?? quad,
     );
     if (raw.length < 8) {
-      window.kvtFit = "no boundary";
+      window.pianocvFit = "no boundary";
       return quad;
     }
     // with no plain quad at all (a folded blob the quad builder gave up on) the boundary
     // still exists, and its own box stands in for the plain quad as the start
     const start = previousFit ?? quad ?? principalBox(raw);
     const points = snapToGradient(gray, width, height, raw, start);
-    window.kvtPoints = points;
-    window.kvtPlain = quad ?? undefined;
-    window.kvtProbability = probability.slice();
-    window.kvtGray = { gray: gray.slice(), width, height };
+    window.pianocvPoints = points;
+    window.pianocvPlain = quad ?? undefined;
+    window.pianocvProbability = probability.slice();
+    window.pianocvGray = { gray: gray.slice(), width, height };
     const focal = cameraFocalFraction() * width;
     const frame = { gray, width, height };
     let held = fitRectangle(points, start, width, height, focal);
@@ -281,7 +281,7 @@ export async function createDetector(
       held = fitRectangle(points, quad, width, height, focal);
     }
     if (!held) {
-      window.kvtFit = lastDecline;
+      window.pianocvFit = lastDecline;
       previousFit = null;
       return quad;
     }
@@ -303,10 +303,10 @@ export async function createDetector(
     }
     previousFit = rectangle;
     const fitted = refineEnds(frame, rectangle);
-    window.kvtQuad = fitted;
-    window.kvtRect = rectangle;
+    window.pianocvQuad = fitted;
+    window.pianocvRect = rectangle;
     if (!quad) {
-      window.kvtFit = `fit at focal ${focal.toFixed(0)} from the boundary alone`;
+      window.pianocvFit = `fit at focal ${focal.toFixed(0)} from the boundary alone`;
       return fitted;
     }
     // the rectangle earns its place by explaining the boundary at least as well as the free
@@ -314,7 +314,7 @@ export async function createDetector(
     const plainResidual = boundaryResidual(points, quad);
     const heldResidual = boundaryResidual(points, fitted);
     const wins = heldResidual <= plainResidual + FIT_SLACK_PX;
-    window.kvtFit = `${wins ? "fit" : "plain"} at focal ${focal.toFixed(0)}: residual fit ${heldResidual.toFixed(2)} plain ${plainResidual.toFixed(2)}`;
+    window.pianocvFit = `${wins ? "fit" : "plain"} at focal ${focal.toFixed(0)}: residual fit ${heldResidual.toFixed(2)} plain ${plainResidual.toFixed(2)}`;
     return wins ? fitted : quad;
   };
 

@@ -25,6 +25,8 @@ export interface PlanePose {
   translation: number[];
   worldWidthMm: number;
   residual: number;
+  /** The sign that turns a height above the keybed into the rotation's third axis. */
+  up: 1 | -1;
 }
 
 // the keybed's depth in white-key widths, the default until the user measures it from a
@@ -166,8 +168,9 @@ export function estimateFocal(
   imageCorners: Point[],
   width: number,
   height: number,
+  world: Point[] = worldCorners(),
 ): number {
-  const h = findHomography(worldCorners(), canonicalQuad(imageCorners));
+  const h = findHomography(world, canonicalQuad(imageCorners));
   const lo = 0.3 * width;
   const hi = 3 * width;
   const residual = (f: number): number => {
@@ -193,15 +196,19 @@ export function solvePose(
   imageCorners: Point[],
   width: number,
   height: number,
+  world: Point[] = worldCorners(),
 ): PlanePose {
-  const h = findHomography(worldCorners(), canonicalQuad(imageCorners));
-  const focal = estimateFocal(imageCorners, width, height);
+  const h = findHomography(world, canonicalQuad(imageCorners));
+  const focal = estimateFocal(imageCorners, width, height, world);
   const b = inverseCalibrationHomography(focal, width, height, h);
   const scale = norm(column(b, 0));
   const r1 = [b[0][0] / scale, b[1][0] / scale, b[2][0] / scale];
   const r2 = [b[0][1] / scale, b[1][1] / scale, b[2][1] / scale];
   const r3 = cross(r1, r2);
   const metricScale = WHITE_KEY_MM / scale;
+  // world axes along and across the keys make their cross product point into the table, so we
+  // flip heights toward whichever side of the plane the camera is on
+  const cameraBelow = r3[0] * b[0][2] + r3[1] * b[1][2] + r3[2] * b[2][2] > 0;
   return {
     focal,
     rotation: [
@@ -214,8 +221,9 @@ export function solvePose(
       b[1][2] * metricScale,
       b[2][2] * metricScale,
     ],
-    worldWidthMm: WHITE_KEY_COUNT * WHITE_KEY_MM,
+    worldWidthMm: world[1].x * WHITE_KEY_MM,
     residual: poseResidual(b),
+    up: cameraBelow ? -1 : 1,
   };
 }
 
@@ -232,7 +240,7 @@ export function projectSpace(
 ): Point {
   const xmm = u * WHITE_KEY_MM;
   const ymm = v * WHITE_KEY_MM;
-  const zmm = w * WHITE_KEY_MM;
+  const zmm = pose.up * w * WHITE_KEY_MM;
   const r = pose.rotation;
   const t = pose.translation;
   const at = (row: number): number =>
@@ -266,7 +274,7 @@ export function spaceDepth(
   return (
     (r[2][0] * u * WHITE_KEY_MM +
       r[2][1] * v * WHITE_KEY_MM +
-      r[2][2] * w * WHITE_KEY_MM +
+      r[2][2] * pose.up * w * WHITE_KEY_MM +
       pose.translation[2]) /
     WHITE_KEY_MM
   );
@@ -279,5 +287,5 @@ export function cameraPosition(pose: PlanePose): Vector3 {
   const t = pose.translation;
   const at = (col: number): number =>
     -(r[0][col] * t[0] + r[1][col] * t[1] + r[2][col] * t[2]) / WHITE_KEY_MM;
-  return { u: at(0), v: at(1), w: at(2) };
+  return { u: at(0), v: at(1), w: pose.up * at(2) };
 }

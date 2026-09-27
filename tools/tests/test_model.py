@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from kvt.model import (
+from pianocv.model import (
     KeybedNet,
     corner_loss,
     decode_heatmaps,
@@ -12,7 +12,7 @@ from kvt.model import (
     predict_corners,
     preprocess,
 )
-from kvt.render import render_sample
+from pianocv.render import render_sample
 
 FRAME_SIZE = (640.0, 480.0)
 

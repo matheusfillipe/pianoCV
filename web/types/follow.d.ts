@@ -2,7 +2,7 @@ import type { Point } from "./homography";
 import type { Size } from "./keyspace";
 declare global {
     interface Window {
-        kvtFollowMs?: number[];
+        pianocvFollowMs?: number[];
     }
 }
 export interface GrayFrame {

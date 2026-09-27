@@ -4,7 +4,7 @@ import { type Measurement } from "./measure";
 import { type Stillness } from "./stillness";
 /** Hunting runs the model often since nothing is held yet. Held only has to
  * ask whether the keyboard moved, so a glance runs far less often. */
-export declare const searchEveryMs = 350;
+export declare const searchEveryMs = 120;
 export declare const glanceEveryMs = 500;
 export declare const confirmEveryMs = 2500;
 export declare const trustStillnessForMs = 30000;

@@ -5,8 +5,8 @@ import onnx
 import onnxruntime
 import torch
 
-from kvt.export import export_onnx
-from kvt.model import INPUT_SIZE, KeybedNet, load_model, predict_corners, preprocess
+from pianocv.export import export_onnx
+from pianocv.model import INPUT_SIZE, KeybedNet, load_model, predict_corners, preprocess
 
 
 def _checkpoint(tmp_path: Path) -> Path:

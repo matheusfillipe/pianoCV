@@ -16,6 +16,8 @@ export interface PlanePose {
     translation: number[];
     worldWidthMm: number;
     residual: number;
+    /** The sign that turns a height above the keybed into the rotation's third axis. */
+    up: 1 | -1;
 }
 export declare function setKeybedDepth(units: number): void;
 export declare function keybedDepth(): number;
@@ -26,8 +28,8 @@ export declare function cameraFocalFraction(): number;
  * the player at the near edge. */
 export declare function worldCorners(): Point[];
 export declare function canonicalQuad(quad: Point[]): Point[];
-export declare function estimateFocal(imageCorners: Point[], width: number, height: number): number;
-export declare function solvePose(imageCorners: Point[], width: number, height: number): PlanePose;
+export declare function estimateFocal(imageCorners: Point[], width: number, height: number, world?: Point[]): number;
+export declare function solvePose(imageCorners: Point[], width: number, height: number, world?: Point[]): PlanePose;
 /** Where a point of the keybed's own space lands in the picture. u runs along
  * the keys and v across their depth, both in white-key widths, and w stands off
  * the plane, which is where anything drawn over the instrument lives. */

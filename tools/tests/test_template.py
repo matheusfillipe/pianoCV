@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from kvt.template import STRIP_HEIGHT, STRIP_WIDTH, TEMPLATE, build_template, score
+from pianocv.template import STRIP_HEIGHT, STRIP_WIDTH, TEMPLATE, build_template, score
 
 WIDTH = 640
 HEIGHT = 480

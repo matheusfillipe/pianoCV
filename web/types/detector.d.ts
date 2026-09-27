@@ -2,13 +2,13 @@ import type { RuntimeAssets } from "./assets";
 import type { Point } from "./homography";
 declare global {
     interface Window {
-        kvtFit?: string;
-        kvtPoints?: Point[];
-        kvtPlain?: Point[];
-        kvtQuad?: Point[];
-        kvtRect?: Point[];
-        kvtProbability?: Float32Array;
-        kvtGray?: {
+        pianocvFit?: string;
+        pianocvPoints?: Point[];
+        pianocvPlain?: Point[];
+        pianocvQuad?: Point[];
+        pianocvRect?: Point[];
+        pianocvProbability?: Float32Array;
+        pianocvGray?: {
             gray: Float32Array;
             width: number;
             height: number;

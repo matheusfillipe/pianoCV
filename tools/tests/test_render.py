@@ -4,14 +4,14 @@ import cv2
 import numpy as np
 import pytest
 
-from kvt.render import (
+from pianocv.render import (
     _MIN_VISIBLE_FRACTION,
     _WHITE_COUNTS,
     _sample_quad,
     _visible_fraction,
     render_sample,
 )
-from kvt.template import score
+from pianocv.template import score
 
 WIDTH = 640
 HEIGHT = 480
@@ -81,7 +81,7 @@ def test_render_sample_composite_mode_resizes_background() -> None:
 def test_render_sample_falls_back_to_synthetic_without_real_frames(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("kvt.render._REAL_FRAMES", [])
+    monkeypatch.setattr("pianocv.render._REAL_FRAMES", [])
     sample = render_sample(np.random.default_rng(3))
     assert sample.image.shape == (HEIGHT, WIDTH, 3)
     assert sample.quad_px.shape == (4, 2)
@@ -111,7 +111,7 @@ def test_sampled_quads_cover_a_range_of_orientations() -> None:
 def test_synthetic_keybed_renders_against_the_canonical_template(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("kvt.render._REAL_FRAMES", [])
+    monkeypatch.setattr("pianocv.render._REAL_FRAMES", [])
     scores = []
     for seed in range(120):
         sample = render_sample(np.random.default_rng(seed))

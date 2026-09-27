@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from kvt.homography import find_homography
+from pianocv.homography import find_homography
 
 SQUARE = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
 

@@ -1,6 +1,6 @@
 import numpy as np
 
-from kvt.pose import DEPTH_UNITS, WHITE_KEY_COUNT, fit_pose
+from pianocv.pose import DEPTH_UNITS, WHITE_KEY_COUNT, fit_pose
 
 WIDTH, HEIGHT = 640, 480
 
