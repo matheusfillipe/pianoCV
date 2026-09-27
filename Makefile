@@ -10,7 +10,7 @@ PORT ?= 5274
         lab-synth-generate \
         tools-fix tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
-        build web-typecheck web-lint web-fix web-test web-build dev dev-alt model site clean lab-export \
+        build web-typecheck web-lint web-fix web-test web-build dev dev-alt model site publish-models clean lab-export \
         lab-evaluate lab-real-seg2-prepare lab-relabel-keys lab-compare lab-trainseg2 lab-dataset-push \
         lab-keymatch-train lab-keymatch-push lab-keyseg-train
 
@@ -100,6 +100,19 @@ model: ## download the trained models from hugging face into web/public
 			https://huggingface.co/$(MODEL_REPO)/resolve/main/$$model || exit 1; \
 	done
 	@ls -lh $(addprefix web/public/,$(MODELS))
+
+MESSAGE ?= update the models
+
+publish-models: ## check web/public's models for leaked local paths, then upload them and hf-model/README.md to hugging face (needs hf auth login; MESSAGE="...")
+	@for model in $(MODELS); do \
+		if strings -n 6 web/public/$$model | grep -qE '/Users/|/home/|site-packages|stack_trace'; then \
+			echo "$$model carries a local path or stack trace, not publishing it"; exit 1; \
+		fi; \
+	done
+	@rm -rf .publish && mkdir .publish
+	cp $(addprefix web/public/,$(MODELS)) hf-model/README.md .publish/
+	hf upload $(MODEL_REPO) .publish . --commit-message "$(MESSAGE)"
+	@rm -rf .publish
 
 BASE ?= /
 

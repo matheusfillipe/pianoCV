@@ -38,6 +38,7 @@ node_modules/
 *.swp
 
 # tooling local state
+.publish/
 .playwright-mcp/
 
 # weights are distributed on their own, never through git

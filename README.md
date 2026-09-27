@@ -1,8 +1,9 @@
 # pianoCV
 
-A set of small computer vision models, and the browser pipeline around them, that finds every
-key of a piano or electronic keyboard in a camera image, live, and solves where the keyboard
-sits in 3D.
+A piano segmentation model, and the browser pipeline around it, that finds every key of a
+piano or electronic keyboard in a camera image, live. The model marks which pixels are white
+keys, black keys, and the gaps between them, so each key comes out as its own region, and the
+pipeline turns those regions into every key's outline and where the keyboard sits in 3D.
 
 Everything runs in the browser. There is no server and nothing you record leaves your machine.
 It never listens to the music and never tries to work out which notes are played: it solves
@@ -80,7 +81,9 @@ and how far each drawn key lands from the real one.
 ## The models
 
 The weights live at [mattf/pianoCV](https://huggingface.co/mattf/pianoCV) rather than in this
-repo, and `make model` fetches them into `web/public/`.
+repo, and `make model` fetches them into `web/public/`. `make publish-models` uploads the
+models in `web/public/` together with the model card in `hf-model/README.md`, after checking
+that no file carries a local path.
 
 ## Notes on the data
 
