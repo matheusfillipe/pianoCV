@@ -12,6 +12,7 @@ docs/
 *.mkv
 *.webm
 *.png
+!.github/readme/*.png
 *.jpg
 *.jpeg
 exports/
