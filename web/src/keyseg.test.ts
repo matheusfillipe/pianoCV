@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   CROP_HEIGHT,
   CROP_WIDTH,
+  createKeySnap,
   cropFor,
   cropToFrame,
   keyOutline,
+  outlinePoints,
+  sampleOutline,
   snapKeys,
 } from "./keyseg";
 
@@ -62,36 +65,49 @@ describe("keyOutline", () => {
 describe("snapKeys", () => {
   const key = {
     black: false,
-    bar: [
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-      { x: 1, y: 6 },
-      { x: 0, y: 6 },
-    ],
+    bar: outlinePoints(
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 6 },
+        { x: 0, y: 6 },
+      ],
+      40,
+    ),
   };
   const region = (bar: { x: number; y: number }[]) => ({
     black: false,
     bar,
-    centre: { x: 0.5, y: 3 },
-    area: 6,
+    centre: { x: 0.5, y: 4 },
+    area: 5,
   });
 
-  it("moves each corner onto the segmented outline and keeps the corner count", () => {
-    const wobbly = region([
-      { x: 0.1, y: 0.1 },
-      { x: 0.5, y: 0.15 },
-      { x: 1.1, y: 0 },
-      { x: 1.05, y: 3 },
-      { x: 1, y: 6.1 },
+  it("bends a white key's side into the notch a black key cuts", () => {
+    const notched = region([
+      { x: 0, y: 0 },
+      { x: 0.7, y: 0 },
+      { x: 0.7, y: 3 },
+      { x: 1, y: 3 },
+      { x: 1, y: 6 },
       { x: 0, y: 6 },
-      { x: -0.05, y: 3 },
     ]);
-    const [snapped] = snapKeys([key], [wobbly]);
-    expect(snapped.bar).toHaveLength(4);
-    expect(snapped.bar[0]).toEqual({ x: 0.1, y: 0.1 });
+    const [snapped] = snapKeys([key], [notched]);
+    const back = snapped.bar.filter(
+      (_, i) => key.bar[i].x === 1 && key.bar[i].y > 0.8 && key.bar[i].y < 2.2,
+    );
+    const front = snapped.bar.filter(
+      (_, i) => key.bar[i].x === 1 && key.bar[i].y > 4 && key.bar[i].y < 5.2,
+    );
+    expect(back.length).toBeGreaterThan(0);
+    for (const p of back) {
+      expect(p.x).toBeLessThan(0.85);
+    }
+    for (const p of front) {
+      expect(p.x).toBeGreaterThan(0.95);
+    }
   });
 
-  it("keeps a corner the outline does not reach", () => {
+  it("keeps the template where the segmented outline is out of reach", () => {
     const short = region([
       { x: 0, y: 0 },
       { x: 1, y: 0 },
@@ -99,6 +115,74 @@ describe("snapKeys", () => {
       { x: 0, y: 4 },
     ]);
     const [snapped] = snapKeys([key], [short]);
-    expect(snapped.bar[2]).toEqual({ x: 1, y: 6 });
+    const last = key.bar.findIndex((p) => p.y === 6);
+    expect(snapped.bar[last]).toEqual(key.bar[last]);
+  });
+});
+
+describe("createKeySnap", () => {
+  const black = {
+    black: true,
+    semitone: 1,
+    bar: [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 4 },
+      { x: 0, y: 4 },
+    ],
+  };
+  const beside = {
+    black: true,
+    bar: [
+      { x: 0.3, y: 0 },
+      { x: 1.3, y: 0 },
+      { x: 1.3, y: 4 },
+      { x: 0.3, y: 4 },
+    ],
+    centre: { x: 0.8, y: 2 },
+    area: 4,
+  };
+
+  it("keeps its offset when the next segmentation misses it", () => {
+    const snap = createKeySnap();
+    const [first] = snap.apply([black], [beside], 1);
+    const [missed] = snap.apply([black], [], 1);
+    expect(missed.bar).toEqual(first.bar);
+  });
+});
+
+describe("snapping a black key", () => {
+  it("keeps its edges straight past a shadow the segmenter took for key", () => {
+    const { points, edges } = sampleOutline(
+      [
+        { x: 0, y: 0 },
+        { x: 4, y: 0 },
+        { x: 4, y: 1 },
+        { x: 0, y: 1 },
+      ],
+      40,
+    );
+    const shadowed = {
+      black: true,
+      bar: [
+        { x: 0, y: 0 },
+        { x: 4, y: 0 },
+        { x: 4, y: 1 },
+        { x: 2.4, y: 1 },
+        { x: 2, y: 1.3 },
+        { x: 1.6, y: 1 },
+        { x: 0, y: 1 },
+      ],
+      centre: { x: 2, y: 0.5 },
+      area: 4.1,
+    };
+    const [snapped] = snapKeys(
+      [{ black: true, bar: points, edges }],
+      [shadowed],
+    );
+    const bottom = snapped.bar.filter((_, i) => edges[i] === 2);
+    for (const p of bottom) {
+      expect(p.y).toBeCloseTo(1, 1);
+    }
   });
 });

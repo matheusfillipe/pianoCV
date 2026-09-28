@@ -12,6 +12,11 @@ declare global {
         };
         pianocvKeyRead?: KeyRead;
         pianocvKeyEvidence?: KeyEvidence | null;
+        pianocvReadFits?: {
+            confidence: number;
+            fit: number;
+            chosen: boolean;
+        }[];
     }
 }
 export declare const STRIP_WIDTH = 1200;
@@ -137,6 +142,9 @@ export type KeyEvidence = {
  * so a leftover lens warp does not have to be modelled to be tolerated. */
 export declare function detectKeys(strip: Strip, lift?: LiftFor | null, evidence?: KeyEvidence | null): KeyRead;
 export declare function captureSource(frame: CanvasImageSource, size: Size): SourceImage | null;
+/** A board read this unsure has been wrong about the key count on our recordings, and keys
+ * drawn off by one would light the wrong note, so nothing draws a read below it. */
+export declare const TRUSTED_READ = 0.5;
 /** The median of the latest far-edge measurements, once enough of them agree at both ends of the
  * board; null while they are too few or still disagree. */
 export declare function trustedEdge(recent: readonly FarEdge[]): FarEdge | null;
@@ -150,11 +158,17 @@ export type KeyReader = {
 type BoardRead = Extract<KeyRead, {
     kind: "read";
 }>;
+/** The grey level that best splits the values into a dark and a bright class. */
+export declare function otsu(values: readonly number[]): number;
+/** How well a read's keys sit on the picture it was read from: the share of points on its black
+ * keys that are dark and on the front of its white keys that are bright, 1 when every point
+ * agrees. Two reads of one board can agree on its keys and still place them half a key apart. */
+export declare function readFit(read: BoardRead, quad: readonly Point[], source: SourceImage): number;
 /** The read to trust across several looks at the same held keyboard: the board most looks
- * agree on, then the most confident look among them. A still camera shows the same keyboard
- * every time, so a look that disagrees with the rest caught a hand or a blur, and one lucky
- * confident look should not outvote the others. */
-export declare function boardConsensus(reads: readonly BoardRead[]): BoardRead | null;
+ * agree on, then the look among them that scores best, the most confident unless told how else
+ * to score. A still camera shows the same keyboard every time, so a look that disagrees with the
+ * rest caught a hand or a blur, and one lucky confident look should not outvote the others. */
+export declare function boardConsensus(reads: readonly BoardRead[], score?: (read: BoardRead) => number): BoardRead | null;
 /** Reads the keys with the learned matcher when one is given, and with the brightness rules
  * whenever the matcher is missing or sees too little. A key segmenter, when given, first turns
  * the held quad into the outline the key pixels show, so the template is laid on the keys the

@@ -207,6 +207,7 @@ async function evaluateClip(cdp, clipUrl, clip) {
     alignment: null,
     heldQuad: null,
     drawnQuad: null,
+    steadiness: null,
     error: null,
   };
   try {
@@ -291,6 +292,18 @@ async function evaluateClip(cdp, clipUrl, clip) {
     }
   }
 
+  result.steadiness = await cdp
+    .send(
+      "Runtime.evaluate",
+      {
+        expression: STEADINESS_EXPRESSION,
+        returnByValue: true,
+        awaitPromise: true,
+      },
+      STEADINESS_TIMEOUT_MS,
+    )
+    .then((response) => response?.result?.result?.value ?? null)
+    .catch(() => null);
   const detectMatch = /^([0-9.]+)\s*ms$/.exec(result.detectText);
   result.detectMs = detectMatch ? Number(detectMatch[1]) : null;
   const strip = await cdp
@@ -309,6 +322,10 @@ async function evaluateClip(cdp, clipUrl, clip) {
   }
   return result;
 }
+
+// how still the drawn keys stay and how well they sit on the picture, measured on the page
+const STEADINESS_EXPRESSION = `import("/src/steadiness.ts").then((m) => m.measureSteadiness(3000, 0))`;
+const STEADINESS_TIMEOUT_MS = 40_000;
 
 const SYNTHETIC_FRAMES = 240;
 const SYNTHETIC_TIMEOUT_MS = 600_000;
@@ -658,6 +675,9 @@ function renderTable(results) {
     ["detect_ms", 10],
     ["align_6ths", 24],
     ["white_ref", 9],
+    ["black_dark", 11],
+    ["white_lit", 10],
+    ["swing_px", 10],
   ];
   const header = columns.map(([name, width]) => fmt(name, width)).join(" ");
   const rows = results.map((r) => {
@@ -683,6 +703,8 @@ function renderTable(results) {
           .join("/")
       : null;
     const whiteRef = r.alignment?.whiteReference ?? null;
+    const fit = r.steadiness?.fit?.drawn ?? null;
+    const pair = (a, b) => (a === null || b === null ? null : `${a}/${b}`);
     return [
       fmt(r.clip, 28),
       fmt(status, 16),
@@ -695,6 +717,13 @@ function renderTable(results) {
       fmt(r.detectMs, 10),
       fmt(sixths, 24),
       fmt(whiteRef === null ? null : Math.round(whiteRef), 9),
+      fmt(fit && pair(fit.blackDarkMedian, fit.blackDarkP10), 11),
+      fmt(fit?.whiteBright ?? null, 10),
+      fmt(
+        r.steadiness &&
+          pair(r.steadiness.swingPxMedian, r.steadiness.swingPxP95),
+        10,
+      ),
     ].join(" ");
   });
   return [header, ...rows].join("\n");

@@ -59,15 +59,44 @@ export declare function simplify(points: readonly Point[], tolerance: number): P
 export declare function rowsOutline(rows: Rows): Point[];
 /** The convex hull of `points`, by the monotone chain. */
 export declare function convexHull(points: readonly Point[]): Point[];
-/** Each template key moves its corners onto the segmented key of its colour whose centre falls
- * inside it and whose size is close to its own, so keys follow the camera's real shapes where
- * the segmenter saw them and keep the template's straight edges and corner count everywhere. A
- * corner further than its reach from the outline stays where the template put it. A region
- * stands in for one key at most. */
+export declare function nearestOnOutline(p: Point, outline: readonly Point[]): Point;
+/** The outline of a black key's top and front faces together, starting at the top's first
+ * corner and wound the same way, so each point of it is the same spot of the key every frame. */
+export declare function keyHull(top: readonly Point[], front: readonly Point[]): Point[];
+/** `count` points around a closed outline from its first corner: every corner, and the rest
+ * spread over the edges by their length. `edges` holds the edge each point lies on. */
+export declare function sampleOutline(bar: readonly Point[], count: number): {
+    points: Point[];
+    edges: number[];
+};
+export declare function outlinePoints(bar: readonly Point[], count: number): Point[];
+/** Each template key moves onto the segmented key of its colour whose centre falls inside it and
+ * whose size is close to its own: every point of its outline moves onto the nearest point of the
+ * segmented outline, as far as its reach, and the moves are smoothed along each edge. A black
+ * key carried with its `edges` then gets straight edges and sharp corners. A key keeps the
+ * template's outline wherever the segmented one is out of reach, comes back with the points it
+ * was given, and comes back unchanged when nothing matched it. `aspect` is the frame's width over
+ * its height, since points are frame fractions. A region stands in for one key at most. */
 export declare function snapKeys<K extends {
     readonly black: boolean;
     readonly bar: readonly Point[];
-}>(keys: readonly K[], regions: readonly KeyRegion[]): K[];
+    readonly edges?: readonly number[];
+}>(keys: readonly K[], regions: readonly KeyRegion[], aspect?: number): K[];
+export type KeySnap = {
+    /** The keys drawn as smooth outlines. A black key follows its segmented key: its outline is
+     * carried as evenly spread points, each fresh segmentation pulls its held moves part of the way
+     * to what it shows, and a black key the segmenter did not find this time keeps the moves it
+     * had, so it never flips between its template and its segmented shape frame to frame. A white
+     * key keeps the template's outline, whose sides it shares with its white neighbours; the black
+     * keys over it are cut out of it where it is drawn. */
+    readonly apply: <K extends {
+        readonly black: boolean;
+        readonly semitone: number;
+        readonly bar: readonly Point[];
+    }>(keys: readonly K[], regions: readonly KeyRegion[], aspect: number) => K[];
+    readonly reset: () => void;
+};
+export declare function createKeySnap(): KeySnap;
 /** The key regions of a class map, as frame points, and their areas in the same units. */
 export declare function keyRegions(classes: Uint8Array, toFrame: (x: number, y: number) => Point): KeyRegion[];
 export declare function createKeySegmenter(assets: RuntimeAssets, url?: string): Promise<KeySegmenter>;

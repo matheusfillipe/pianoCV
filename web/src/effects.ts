@@ -1,3 +1,4 @@
+import { outsideBlackKeys, tracePolygon } from "./draw";
 import type { Point } from "./homography";
 import { STANDARD_BOARDS } from "./keystrip";
 
@@ -136,6 +137,7 @@ export type Effects = {
   readonly draw: (
     ctx: CanvasRenderingContext2D,
     faces: readonly {
+      readonly black: boolean;
       readonly semitone: number;
       readonly bar: readonly Point[];
     }[],
@@ -164,25 +166,20 @@ export function createEffects(): Effects {
         return;
       }
       ctx.fillStyle = `rgba(${GLOW_COLOR}, 1)`;
-      for (const face of faces) {
-        const level = glowLevel(state, lowestPitch + face.semitone, now);
-        if (level <= 0) {
-          continue;
-        }
-        ctx.globalAlpha = level;
-        ctx.beginPath();
-        for (const [i, corner] of face.bar.entries()) {
-          const x = corner.x * w;
-          const y = corner.y * h;
-          if (i === 0) {
-            ctx.moveTo(x, y);
-          } else {
-            ctx.lineTo(x, y);
+      const glow = (black: boolean): void => {
+        for (const face of faces) {
+          const level = glowLevel(state, lowestPitch + face.semitone, now);
+          if (face.black !== black || level <= 0) {
+            continue;
           }
+          ctx.globalAlpha = level;
+          ctx.beginPath();
+          tracePolygon(ctx, face.bar, w, h);
+          ctx.fill();
         }
-        ctx.closePath();
-        ctx.fill();
-      }
+      };
+      outsideBlackKeys(ctx, faces, w, h, () => glow(false));
+      glow(true);
       ctx.globalAlpha = 1;
     },
   };

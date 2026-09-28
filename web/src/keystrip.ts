@@ -23,6 +23,8 @@ declare global {
     };
     pianocvKeyRead?: KeyRead;
     pianocvKeyEvidence?: KeyEvidence | null;
+    // every read of the held keyboard so far with how well it fit its picture
+    pianocvReadFits?: { confidence: number; fit: number; chosen: boolean }[];
   }
 }
 
@@ -1902,15 +1904,17 @@ export function captureSource(
   return { width, height, data: pixels.data };
 }
 
-/** How the keys are read: a few tries a second and a half apart, keeping the best of them, and
- * then never again until the keybed moves. Mirrors the board reader's own cadence, since both
- * read a picture that does not change once the keybed is held. */
+/** How the keys are read: every try a second and a half apart, keeping the one that fits its
+ * picture best, and then never again until the keybed moves. Reads that agree on the board
+ * still place its keys up to half a key apart, and a confident read can be one of those. */
 const everyMs = 1500;
 /** How soon we look again while the far edge is still unmeasured, since every look without it
  * leaves the drawn keybed reaching into the case. */
 const untrimmedEveryMs = 250;
 const tries = 16;
-const enough = 0.9;
+/** A board read this unsure has been wrong about the key count on our recordings, and keys
+ * drawn off by one would light the wrong note, so nothing draws a read below it. */
+export const TRUSTED_READ = 0.5;
 const settleAfterMs = 250;
 /** Like the tracker's hold, we draw a far edge only once this many looks in a row agree, since
  * the first look after a hold often catches the camera still settling. */
@@ -1949,11 +1953,102 @@ export type KeyReader = {
 
 type BoardRead = Extract<KeyRead, { kind: "read" }>;
 
+/** The grey level that best splits the values into a dark and a bright class. */
+export function otsu(values: readonly number[]): number {
+  const histogram = new Array<number>(256).fill(0);
+  for (const v of values) {
+    histogram[Math.min(255, Math.max(0, Math.round(v)))] += 1;
+  }
+  const total = values.length;
+  const sum = histogram.reduce((s, count, level) => s + count * level, 0);
+  let below = 0;
+  let belowSum = 0;
+  let best = 0;
+  let threshold = 128;
+  for (let level = 0; level < 256; level += 1) {
+    below += histogram[level];
+    if (below === 0 || below === total) {
+      continue;
+    }
+    belowSum += histogram[level] * level;
+    const above = total - below;
+    const between =
+      below * above * (belowSum / below - (sum - belowSum) / above) ** 2;
+    if (between > best) {
+      best = between;
+      threshold = level;
+    }
+  }
+  return threshold;
+}
+
+/** Points spread over a four-corner face, from its first edge (u) towards its third (v). */
+function facePoints(face: readonly Point[], from: number, to: number): Point[] {
+  const [a, b, c, d] = face;
+  const points: Point[] = [];
+  for (let i = 0; i < FIT_SAMPLES; i += 1) {
+    const u = (i + 0.5) / FIT_SAMPLES;
+    for (let j = 0; j < FIT_SAMPLES; j += 1) {
+      const v = from + ((j + 0.5) / FIT_SAMPLES) * (to - from);
+      const top = { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+      const bottom = { x: d.x + (c.x - d.x) * u, y: d.y + (c.y - d.y) * u };
+      points.push({
+        x: top.x + (bottom.x - top.x) * v,
+        y: top.y + (bottom.y - top.y) * v,
+      });
+    }
+  }
+  return points;
+}
+
+const FIT_SAMPLES = 4;
+/** The front of a white key, as a share of its depth, where no black key covers it. */
+const WHITE_FRONT: readonly [number, number] = [0.75, 0.95];
+
+/** How well a read's keys sit on the picture it was read from: the share of points on its black
+ * keys that are dark and on the front of its white keys that are bright, 1 when every point
+ * agrees. Two reads of one board can agree on its keys and still place them half a key apart. */
+export function readFit(
+  read: BoardRead,
+  quad: readonly Point[],
+  source: SourceImage,
+): number {
+  const faces = projectKeyFaces(read, quad, source);
+  const grey = (p: Point): number | null => {
+    const rgb = sampleBilinear(source, p.x * source.width, p.y * source.height);
+    return rgb === null
+      ? null
+      : 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+  };
+  const values = (points: readonly Point[]): number[] =>
+    points.map(grey).filter((v): v is number => v !== null);
+  const dark = values(
+    faces
+      .filter((face) => face.black)
+      .flatMap((face) => facePoints(face.bar, 0, 1)),
+  );
+  const bright = values(
+    faces
+      .filter((face) => !face.black)
+      .flatMap((face) => facePoints(face.bar, WHITE_FRONT[0], WHITE_FRONT[1])),
+  );
+  if (dark.length === 0 || bright.length === 0) {
+    return 0;
+  }
+  const split = otsu([...dark, ...bright]);
+  const darkShare = dark.filter((v) => v < split).length / dark.length;
+  const brightShare = bright.filter((v) => v >= split).length / bright.length;
+  return (darkShare + brightShare) / 2;
+}
+
 /** The read to trust across several looks at the same held keyboard: the board most looks
- * agree on, then the most confident look among them. A still camera shows the same keyboard
- * every time, so a look that disagrees with the rest caught a hand or a blur, and one lucky
- * confident look should not outvote the others. */
-export function boardConsensus(reads: readonly BoardRead[]): BoardRead | null {
+ * agree on, then the look among them that scores best, the most confident unless told how else
+ * to score. A still camera shows the same keyboard every time, so a look that disagrees with the
+ * rest caught a hand or a blur, and one lucky confident look should not outvote the others. */
+export function boardConsensus(
+  reads: readonly BoardRead[],
+  score: (read: BoardRead) => number = (read) => read.confidence,
+): BoardRead | null {
   const groups = new Map<string, BoardRead[]>();
   for (const read of reads) {
     const board = `${read.whiteKeys}${read.phase}`;
@@ -1974,7 +2069,7 @@ export function boardConsensus(reads: readonly BoardRead[]): BoardRead | null {
   if (winner === null) {
     return null;
   }
-  return winner.reduce((a, b) => (b.confidence > a.confidence ? b : a));
+  return winner.reduce((a, b) => (score(b) > score(a) ? b : a));
 }
 
 /** Reads the keys with the learned matcher when one is given, and with the brightness rules
@@ -1991,6 +2086,7 @@ export function createKeyReader(
   let taken = 0;
   let best: KeyRead | null = null;
   let reads: BoardRead[] = [];
+  let fits = new Map<BoardRead, number>();
   let dueAt: number | null = null;
   let trimEdge: FarEdge | null = null;
   let recentEdges: FarEdge[] = [];
@@ -2003,13 +2099,7 @@ export function createKeyReader(
         return;
       }
       dueAt = null;
-      // a confident key read is not enough to stop on its own: until the far edge is measured
-      // too, the keybed we draw still reaches into the case
-      const settled =
-        taken >= tries ||
-        (trimEdge !== null &&
-          best?.kind === "read" &&
-          best.confidence >= enough);
+      const settled = taken >= tries;
       const interval = trimEdge === null ? untrimmedEveryMs : everyMs;
       if (settled || now - at < interval) {
         return;
@@ -2052,8 +2142,20 @@ export function createKeyReader(
         window.pianocvKeyEvidence = evidence;
         if (found.kind === "read") {
           reads = [...reads, found];
+          fits.set(found, readFit(found, keyQuad, source));
         }
-        best = boardConsensus(reads) ?? found;
+        // any trusted read beats every untrusted one, and among trusted reads the best fit wins
+        best =
+          boardConsensus(reads, (read) =>
+            read.confidence >= TRUSTED_READ
+              ? 1 + (fits.get(read) ?? 0)
+              : read.confidence,
+          ) ?? found;
+        window.pianocvReadFits = reads.map((read) => ({
+          confidence: read.confidence,
+          fit: fits.get(read) ?? 0,
+          chosen: read === best,
+        }));
       };
       if (matcher === null) {
         record(strip, keyQuad, PLAIN_OUTLINE, null);
@@ -2100,6 +2202,7 @@ export function createKeyReader(
       taken = 0;
       best = null;
       reads = [];
+      fits = new Map();
       dueAt = now + settleAfterMs;
       trimEdge = null;
       recentEdges = [];

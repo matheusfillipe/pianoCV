@@ -24,6 +24,7 @@ export declare function glowLevel(state: EffectsState, pitch: number, now: numbe
 export declare function prune(state: EffectsState, now: number): EffectsState;
 export type Effects = {
     readonly draw: (ctx: CanvasRenderingContext2D, faces: readonly {
+        readonly black: boolean;
         readonly semitone: number;
         readonly bar: readonly Point[];
     }[], lowestPitch: number | null, w: number, h: number, now: number) => void;

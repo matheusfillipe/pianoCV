@@ -107,27 +107,84 @@ export function drawQuad(
 const WHITE_KEY_COLOR = "rgba(226,232,240,0.85)";
 const BLACK_KEY_COLOR = "rgba(56,189,248,0.9)";
 
-export function drawKeys(
+type Key = { readonly black: boolean; readonly bar: readonly Point[] };
+
+// the clip hides the half of it on the black key and the black key's own 2 px outline covers
+// another pixel, which leaves a 1 px white edge around each black key, as wide as a white outline
+const NOTCH_WIDTH = 4;
+
+export function tracePolygon(
   ctx: CanvasRenderingContext2D,
-  keys: readonly { readonly black: boolean; readonly bar: readonly Point[] }[],
+  bar: readonly Point[],
   w: number,
   h: number,
 ): void {
+  for (const [i, corner] of bar.entries()) {
+    if (i === 0) {
+      ctx.moveTo(corner.x * w, corner.y * h);
+    } else {
+      ctx.lineTo(corner.x * w, corner.y * h);
+    }
+  }
+  ctx.closePath();
+}
+
+/** Runs `draw` with every black key cut out of the canvas, so what it draws of the white keys
+ * stops at the black keys' edges the way the keys themselves do. */
+export function outsideBlackKeys(
+  ctx: CanvasRenderingContext2D,
+  keys: readonly Key[],
+  w: number,
+  h: number,
+  draw: () => void,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-w, -h, 3 * w, 3 * h);
   for (const key of keys) {
-    ctx.strokeStyle = key.black ? BLACK_KEY_COLOR : WHITE_KEY_COLOR;
-    ctx.lineWidth = key.black ? 2 : 1;
-    ctx.beginPath();
-    for (const [i, corner] of key.bar.entries()) {
-      const x = corner.x * w;
-      const y = corner.y * h;
-      if (i === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
+    if (key.black) {
+      tracePolygon(ctx, key.bar, w, h);
+    }
+  }
+  ctx.clip("evenodd");
+  draw();
+  ctx.restore();
+}
+
+export function drawKeys(
+  ctx: CanvasRenderingContext2D,
+  keys: readonly Key[],
+  w: number,
+  h: number,
+): void {
+  outsideBlackKeys(ctx, keys, w, h, () => {
+    ctx.strokeStyle = WHITE_KEY_COLOR;
+    ctx.lineWidth = 1;
+    for (const key of keys) {
+      if (!key.black) {
+        ctx.beginPath();
+        tracePolygon(ctx, key.bar, w, h);
+        ctx.stroke();
       }
     }
-    ctx.closePath();
-    ctx.stroke();
+    // the white keys' notches: the clip keeps only the outer half of a black key's outline
+    ctx.lineWidth = NOTCH_WIDTH;
+    for (const key of keys) {
+      if (key.black) {
+        ctx.beginPath();
+        tracePolygon(ctx, key.bar, w, h);
+        ctx.stroke();
+      }
+    }
+  });
+  ctx.strokeStyle = BLACK_KEY_COLOR;
+  ctx.lineWidth = 2;
+  for (const key of keys) {
+    if (key.black) {
+      ctx.beginPath();
+      tracePolygon(ctx, key.bar, w, h);
+      ctx.stroke();
+    }
   }
 }
 

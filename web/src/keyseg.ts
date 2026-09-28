@@ -408,10 +408,29 @@ export function convexHull(points: readonly Point[]): Point[] {
 const SNAP_LEAST_AREA = 0.45;
 const SNAP_MOST_AREA = 1.6;
 
-/** How far a template corner may move onto the segmented outline, as a share of the key's width. */
+/** How far an outline point may move onto the segmented outline, as a share of the key's width. */
 const SNAP_REACH = 0.4;
+/** How many points a drawn key's outline is carried as. */
+const OUTLINE_POINTS = 40;
+/** How many neighbours either side along the same edge we average a point's move over, so the
+ * pixel steps of a segmented outline come out smooth. */
+const SMOOTH_NEIGHBOURS = 2;
+/** How far a drawn outline may stray from its points once we cut it to straight runs, as a share
+ * of the frame's height. */
+const DRAWN_TOLERANCE = 0.0012;
+/** A black key's edge with at least this many points is refitted without its outliers, and a
+ * point further off the first fit than this many times the typical one is an outlier. */
+const EDGE_REFIT_LEAST = 4;
+const EDGE_OUTLIER = 2.5;
+/** Two edge lines closer to parallel than this, as the sine of their angle, never meet at a
+ * corner we would draw. */
+const EDGE_PARALLEL = 0.15;
+/** How far a black key's corner may move to where its edges meet, as a share of its width. */
+const CORNER_REACH = 0.5;
+/** How far a key's held outline moves towards each new segmentation's. */
+const SNAP_EASE = 0.15;
 
-function nearestOnOutline(p: Point, outline: readonly Point[]): Point {
+export function nearestOnOutline(p: Point, outline: readonly Point[]): Point {
   let best = p;
   let bestDistance = Infinity;
   outline.forEach((a, i) => {
@@ -436,25 +455,129 @@ function nearestOnOutline(p: Point, outline: readonly Point[]): Point {
   return best;
 }
 
+/** A key's width, as the short side of the rectangle with its perimeter and area, so it holds
+ * however many points the outline is carried as. */
 function keyWidth(bar: readonly Point[]): number {
-  const longest = Math.max(
-    ...bar.map((a, i) => {
+  const half =
+    bar.reduce((sum, a, i) => {
       const b = bar[(i + 1) % bar.length];
-      return Math.hypot(b.x - a.x, b.y - a.y);
-    }),
+      return sum + Math.hypot(b.x - a.x, b.y - a.y);
+    }, 0) / 2;
+  return (
+    (half - Math.sqrt(Math.max(0, half * half - 4 * polygonArea(bar)))) / 2
   );
-  return longest === 0 ? 0 : polygonArea(bar) / longest;
 }
 
-/** Each template key moves its corners onto the segmented key of its colour whose centre falls
- * inside it and whose size is close to its own, so keys follow the camera's real shapes where
- * the segmenter saw them and keep the template's straight edges and corner count everywhere. A
- * corner further than its reach from the outline stays where the template put it. A region
- * stands in for one key at most. */
+function signedArea(points: readonly Point[]): number {
+  let twice = 0;
+  points.forEach((p, i) => {
+    const q = points[(i + 1) % points.length];
+    twice += p.x * q.y - q.x * p.y;
+  });
+  return twice / 2;
+}
+
+/** The outline of a black key's top and front faces together, starting at the top's first
+ * corner and wound the same way, so each point of it is the same spot of the key every frame. */
+export function keyHull(
+  top: readonly Point[],
+  front: readonly Point[],
+): Point[] {
+  const hull = convexHull([...top, ...front]);
+  const wound =
+    Math.sign(signedArea(hull)) === Math.sign(signedArea(top))
+      ? hull
+      : [...hull].reverse();
+  let start = 0;
+  wound.forEach((p, i) => {
+    if (
+      Math.hypot(p.x - top[0].x, p.y - top[0].y) <
+      Math.hypot(wound[start].x - top[0].x, wound[start].y - top[0].y)
+    ) {
+      start = i;
+    }
+  });
+  return [...wound.slice(start), ...wound.slice(0, start)];
+}
+
+/** `count` points around a closed outline from its first corner: every corner, and the rest
+ * spread over the edges by their length. `edges` holds the edge each point lies on. */
+export function sampleOutline(
+  bar: readonly Point[],
+  count: number,
+): { points: Point[]; edges: number[] } {
+  const lengths = bar.map((p, i) => {
+    const q = bar[(i + 1) % bar.length];
+    return Math.hypot(q.x - p.x, q.y - p.y);
+  });
+  const perimeter = lengths.reduce((sum, l) => sum + l, 0);
+  const share = (l: number): number =>
+    perimeter === 0 ? 1 : 1 + ((count - bar.length) * l) / perimeter;
+  const shares = lengths.map((l) => Math.floor(share(l)));
+  // whole points go to the edges by their length, and the few left over to the longest edges
+  const byLength = lengths
+    .map((l, i) => ({ i, rest: share(l) - Math.floor(share(l)) }))
+    .sort((x, y) => y.rest - x.rest || x.i - y.i);
+  for (let k = 0; shares.reduce((a, b) => a + b, 0) < count; k += 1) {
+    shares[byLength[k % byLength.length].i] += 1;
+  }
+  const points: Point[] = [];
+  const edges: number[] = [];
+  bar.forEach((p, edge) => {
+    const q = bar[(edge + 1) % bar.length];
+    for (let j = 0; j < shares[edge]; j += 1) {
+      const t = j / shares[edge];
+      points.push({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+      edges.push(edge);
+    }
+  });
+  return { points, edges };
+}
+
+export function outlinePoints(bar: readonly Point[], count: number): Point[] {
+  return sampleOutline(bar, count).points;
+}
+
+/** Each move averaged with its neighbours on the same edge, so an edge comes out smooth and a
+ * corner stays sharp. */
+function smoothAlongEdges(
+  moves: readonly Point[],
+  edges: readonly number[] | undefined,
+): Point[] {
+  const n = moves.length;
+  return moves.map((_, i) => {
+    let x = 0;
+    let y = 0;
+    let taken = 0;
+    for (let k = -SMOOTH_NEIGHBOURS; k <= SMOOTH_NEIGHBOURS; k += 1) {
+      const j = (i + k + n) % n;
+      if (edges !== undefined && edges[j] !== edges[i]) {
+        continue;
+      }
+      x += moves[j].x;
+      y += moves[j].y;
+      taken += 1;
+    }
+    return { x: x / taken, y: y / taken };
+  });
+}
+
+/** Each template key moves onto the segmented key of its colour whose centre falls inside it and
+ * whose size is close to its own: every point of its outline moves onto the nearest point of the
+ * segmented outline, as far as its reach, and the moves are smoothed along each edge. A black
+ * key carried with its `edges` then gets straight edges and sharp corners. A key keeps the
+ * template's outline wherever the segmented one is out of reach, comes back with the points it
+ * was given, and comes back unchanged when nothing matched it. `aspect` is the frame's width over
+ * its height, since points are frame fractions. A region stands in for one key at most. */
 export function snapKeys<
-  K extends { readonly black: boolean; readonly bar: readonly Point[] },
->(keys: readonly K[], regions: readonly KeyRegion[]): K[] {
+  K extends {
+    readonly black: boolean;
+    readonly bar: readonly Point[];
+    readonly edges?: readonly number[];
+  },
+>(keys: readonly K[], regions: readonly KeyRegion[], aspect = 1): K[] {
   const used = new Set<KeyRegion>();
+  const square = (p: Point): Point => ({ x: p.x * aspect, y: p.y });
   return keys.map((key) => {
     const area = polygonArea(key.bar);
     const match = regions.find(
@@ -469,13 +592,199 @@ export function snapKeys<
       return key;
     }
     used.add(match);
-    const reach = SNAP_REACH * keyWidth(key.bar);
-    const pulled = key.bar.map((p) => {
-      const q = nearestOnOutline(p, match.bar);
-      return Math.hypot(q.x - p.x, q.y - p.y) <= reach ? q : p;
-    });
-    return { ...key, bar: key.black ? convexHull(pulled) : pulled };
+    const bar = key.bar.map(square);
+    const reach = SNAP_REACH * keyWidth(bar);
+    const outline = match.bar.map(square);
+    const moves = smoothAlongEdges(
+      bar.map((p) => {
+        const q = nearestOnOutline(p, outline);
+        return Math.hypot(q.x - p.x, q.y - p.y) <= reach
+          ? { x: q.x - p.x, y: q.y - p.y }
+          : { x: 0, y: 0 };
+      }),
+      key.edges,
+    );
+    const moved = bar.map((p, i) => ({
+      x: p.x + moves[i].x,
+      y: p.y + moves[i].y,
+    }));
+    const shaped =
+      key.black && key.edges
+        ? straightenEdges(moved, key.edges, keyWidth(bar))
+        : moved;
+    return {
+      ...key,
+      bar: shaped.map((p) => ({ x: p.x / aspect, y: p.y })),
+    };
   });
+}
+
+type FittedLine = { readonly at: Point; readonly along: Point };
+
+/** The straight line through the points, fitted again without the ones far off the first fit,
+ * the way a shadow the segmenter took for key bulges off a black key's edge. */
+function edgeLine(points: readonly Point[]): FittedLine | null {
+  const through = (pts: readonly Point[]): FittedLine | null => {
+    if (pts.length < 2) {
+      return null;
+    }
+    const at = {
+      x: pts.reduce((sum, p) => sum + p.x, 0) / pts.length,
+      y: pts.reduce((sum, p) => sum + p.y, 0) / pts.length,
+    };
+    let xx = 0;
+    let xy = 0;
+    let yy = 0;
+    for (const p of pts) {
+      xx += (p.x - at.x) ** 2;
+      xy += (p.x - at.x) * (p.y - at.y);
+      yy += (p.y - at.y) ** 2;
+    }
+    const angle = 0.5 * Math.atan2(2 * xy, xx - yy);
+    return { at, along: { x: Math.cos(angle), y: Math.sin(angle) } };
+  };
+  const first = through(points);
+  if (first === null || points.length < EDGE_REFIT_LEAST) {
+    return first;
+  }
+  const off = points.map((p) => offLine(p, first));
+  const typical = [...off].sort((a, b) => a - b)[Math.floor(off.length / 2)];
+  const kept = points.filter((_, i) => off[i] <= typical * EDGE_OUTLIER);
+  return kept.length >= 2 ? through(kept) : first;
+}
+
+function offLine(p: Point, line: FittedLine): number {
+  return Math.abs(
+    (p.x - line.at.x) * line.along.y - (p.y - line.at.y) * line.along.x,
+  );
+}
+
+function ontoLine(p: Point, line: FittedLine): Point {
+  const t = (p.x - line.at.x) * line.along.x + (p.y - line.at.y) * line.along.y;
+  return { x: line.at.x + line.along.x * t, y: line.at.y + line.along.y * t };
+}
+
+function meet(a: FittedLine, b: FittedLine): Point | null {
+  const denominator = a.along.x * b.along.y - a.along.y * b.along.x;
+  if (Math.abs(denominator) < EDGE_PARALLEL) {
+    return null;
+  }
+  const t =
+    ((b.at.x - a.at.x) * b.along.y - (b.at.y - a.at.y) * b.along.x) /
+    denominator;
+  return { x: a.at.x + a.along.x * t, y: a.at.y + a.along.y * t };
+}
+
+/** Each edge of the outline laid on its own straight line and each corner where its two edges'
+ * lines meet, so a key keeps straight sides and sharp corners wherever its edges lead. */
+function straightenEdges(
+  points: readonly Point[],
+  edges: readonly number[],
+  width: number,
+): Point[] {
+  const reach = CORNER_REACH * width;
+  const count = Math.max(...edges) + 1;
+  const lines = Array.from({ length: count }, (_, e) => {
+    const on = points.filter((_, i) => edges[i] === e);
+    const end = points[(edges.lastIndexOf(e) + 1) % points.length];
+    return edgeLine([...on, end]);
+  });
+  return points.map((p, i) => {
+    const line = lines[edges[i]];
+    if (line === null) {
+      return p;
+    }
+    const corner = i === 0 || edges[i - 1] !== edges[i];
+    const before = lines[(edges[i] - 1 + count) % count];
+    const met = corner && before !== null ? meet(before, line) : null;
+    return met !== null && Math.hypot(met.x - p.x, met.y - p.y) <= reach
+      ? met
+      : ontoLine(p, line);
+  });
+}
+
+export type KeySnap = {
+  /** The keys drawn as smooth outlines. A black key follows its segmented key: its outline is
+   * carried as evenly spread points, each fresh segmentation pulls its held moves part of the way
+   * to what it shows, and a black key the segmenter did not find this time keeps the moves it
+   * had, so it never flips between its template and its segmented shape frame to frame. A white
+   * key keeps the template's outline, whose sides it shares with its white neighbours; the black
+   * keys over it are cut out of it where it is drawn. */
+  readonly apply: <
+    K extends {
+      readonly black: boolean;
+      readonly semitone: number;
+      readonly bar: readonly Point[];
+    },
+  >(
+    keys: readonly K[],
+    regions: readonly KeyRegion[],
+    aspect: number,
+  ) => K[];
+  readonly reset: () => void;
+};
+
+export function createKeySnap(): KeySnap {
+  let held = new Map<string, Point[]>();
+  let seen: readonly KeyRegion[] | null = null;
+  return {
+    reset: () => {
+      held = new Map();
+      seen = null;
+    },
+    apply: (keys, regions, aspect) => {
+      const dense = keys.map((key) => {
+        const { points, edges } = sampleOutline(key.bar, OUTLINE_POINTS);
+        return { ...key, bar: points, edges };
+      });
+      const id = (key: { black: boolean; semitone: number }): string =>
+        `${key.black}${key.semitone}`;
+      if (regions !== seen) {
+        seen = regions;
+        const blacks = dense.filter((key) => key.black);
+        const snapped = snapKeys(blacks, regions, aspect);
+        blacks.forEach((key, i) => {
+          if (snapped[i] === key) {
+            return;
+          }
+          const moves = snapped[i].bar.map((p, j) => ({
+            x: p.x - key.bar[j].x,
+            y: p.y - key.bar[j].y,
+          }));
+          const before = held.get(id(key));
+          held.set(
+            id(key),
+            before === undefined
+              ? moves
+              : before.map((h, j) => ({
+                  x: h.x + (moves[j].x - h.x) * SNAP_EASE,
+                  y: h.y + (moves[j].y - h.y) * SNAP_EASE,
+                })),
+          );
+        });
+      }
+      const square = (p: Point): Point => ({ x: p.x * aspect, y: p.y });
+      const moved = dense.map((key) => {
+        const moves = held.get(id(key));
+        return {
+          ...key,
+          bar: (moves
+            ? key.bar.map((p, j) => ({
+                x: p.x + moves[j].x,
+                y: p.y + moves[j].y,
+              }))
+            : key.bar
+          ).map(square),
+        };
+      });
+      return moved.map((key) => ({
+        ...key,
+        bar: simplify([...key.bar, key.bar[0]], DRAWN_TOLERANCE)
+          .slice(0, -1)
+          .map((p) => ({ x: p.x / aspect, y: p.y })),
+      }));
+    },
+  };
 }
 
 /** The key regions of a class map, as frame points, and their areas in the same units. */

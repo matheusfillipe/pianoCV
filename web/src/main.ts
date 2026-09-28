@@ -19,12 +19,12 @@ import type { Point } from "./homography";
 import { createHud, type Hud } from "./hud";
 import { createKeyMatcher, KEYMATCH_URL, type KeyMatcher } from "./keymatch";
 import {
-  convexHull,
   createKeySegmenter,
+  createKeySnap,
   KEYSEG_URL,
   type KeyRegion,
   type KeySegmenter,
-  snapKeys,
+  keyHull,
 } from "./keyseg";
 import { keybedSpace } from "./keyspace";
 import {
@@ -33,8 +33,8 @@ import {
   type FarEdge,
   type KeyRead,
   outlineQuad,
-  PLAIN_OUTLINE,
   projectKeyFaces,
+  TRUSTED_READ,
   trimFarEdge,
 } from "./keystrip";
 import { createLab } from "./lab";
@@ -64,9 +64,12 @@ declare global {
     // what the live segmenter last found, for the lab to read off a live page
     pianocvLiveKeys?: {
       readonly outline: Point[] | null;
-      readonly regions: number;
+      readonly regions: readonly KeyRegion[];
       readonly current: boolean;
     };
+    // the keys drawn this frame, and the template they were snapped from, as frame fractions
+    pianocvDrawnKeys?: readonly DrawnKey[];
+    pianocvTemplateKeys?: readonly DrawnKey[];
   }
 }
 
@@ -78,7 +81,6 @@ function modelUrl(file: string): string {
 const MANUAL_COLOR = "rgba(56,189,248,0.9)";
 const AUTO_COLOR = "#4ade80";
 const MODEL_VIEW_PX = 216;
-const TRUSTED_BOARD_CONFIDENCE = 0.5;
 const OUTLINE_EASE = 0.3;
 // a corner moving this far in one read is the keyboard moving, so we follow it at once
 const OUTLINE_JUMP = 0.04;
@@ -216,7 +218,7 @@ function oneFacePerKey(faces: readonly DetectedKey[]): DrawnKey[] {
     const face = faces[i];
     const front = faces[i + 1];
     if (face.black && front?.black && front.semitone === face.semitone) {
-      keys.push({ ...face, bar: convexHull([...face.bar, ...front.bar]) });
+      keys.push({ ...face, bar: keyHull(face.bar, front.bar) });
       i += 1;
     } else {
       keys.push(face);
@@ -305,7 +307,7 @@ function startLoop(
   // drawn on so they follow the real keyboard every frame
   let liveOutline: Point[] | null = null;
   let liveRegions: readonly KeyRegion[] = [];
-  let shownBars = new Map<string, Point[]>();
+  const keySnap = createKeySnap();
   let segmenting = false;
 
   hud.onRedetect(() => tracker?.release());
@@ -379,7 +381,7 @@ function startLoop(
         keyReader.moved(now);
         liveOutline = null;
         liveRegions = [];
-        shownBars = new Map();
+        keySnap.reset();
       }
       const space = keybedSpace({ quad: state.quad }, size);
       if (space) {
@@ -429,10 +431,8 @@ function startLoop(
         AUTO_COLOR,
         "keybed",
       );
-      // a board read this unsure has been wrong about the key count on our recordings, and keys
-      // drawn off by one would light the wrong note, so we draw nothing until it is surer
       const trusted =
-        found?.kind === "read" && found.confidence >= TRUSTED_BOARD_CONFIDENCE
+        found?.kind === "read" && found.confidence >= TRUSTED_READ
           ? found
           : null;
       if (keySegmenter && trusted && !segmenting) {
@@ -449,29 +449,21 @@ function startLoop(
             }
             window.pianocvLiveKeys = {
               outline: liveOutline,
-              regions: liveRegions.length,
+              regions: liveRegions,
               current: boardHeld === heldAt,
             };
           });
       }
       const faces =
         trusted && (hud.state.keys || hud.state.glow)
-          ? liveOutline
-            ? projectKeyFaces(
-                { ...trusted, outline: PLAIN_OUTLINE },
-                liveOutline,
-                size,
-              )
-            : projectKeyFaces(trusted, followed, size)
+          ? projectKeyFaces(trusted, followed, size)
           : [];
+      const template = oneFacePerKey(faces);
+      window.pianocvTemplateKeys = template;
       const keys = liveOutline
-        ? snapKeys(oneFacePerKey(faces), liveRegions).map((key) => {
-            const id = `${key.semitone}`;
-            const bar = easedOutline(shownBars.get(id) ?? null, key.bar) ?? [];
-            shownBars.set(id, bar);
-            return { ...key, bar };
-          })
-        : faces;
+        ? keySnap.apply(template, liveRegions, size.width / size.height)
+        : template;
+      window.pianocvDrawnKeys = keys;
       if (hud.state.keys) {
         drawKeys(ctx, keys, box.w, box.h);
       }
