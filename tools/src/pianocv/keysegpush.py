@@ -1,0 +1,77 @@
+"""Pack what a KeySegNet fine-tune adds to the synthetic bundle and upload it with the MinIO client:
+the real frames the app labelled itself, the pianocv source that trains on them, and the export
+the fine-tune starts from."""
+
+import argparse
+import tarfile
+import tempfile
+from datetime import date
+from pathlib import Path
+
+from pianocv.datasetpush import _compress, _destination_taken, _mc_cp, _skip_pycache
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_REAL_DIR = _REPO_ROOT / "data" / "real-keys"
+DEFAULT_INIT_ONNX = _REPO_ROOT / "web" / "public" / "keyseg.onnx"
+DEFAULT_PIANOCV_DIR = Path(__file__).resolve().parent
+_BUNDLE_STEM = "bundle.tar"
+
+
+def build_keyseg_bundle(real_dir: Path, init_onnx: Path, pianocv_dir: Path, tar_path: Path) -> Path:
+    for name, path in (("real-keys", real_dir), ("pianocv", pianocv_dir)):
+        if not path.is_dir():
+            raise FileNotFoundError(f"missing {name} directory: {path}")
+    if not init_onnx.is_file():
+        raise FileNotFoundError(f"missing starting export: {init_onnx}")
+    with tarfile.open(tar_path, mode="w") as archive:
+        archive.add(real_dir, arcname="real-keys", filter=_skip_pycache)
+        archive.add(pianocv_dir, arcname="pianocv", filter=_skip_pycache)
+        archive.add(init_onnx, arcname="keyseg.onnx")
+    return tar_path
+
+
+def push_keyseg(
+    real_dir: Path,
+    init_onnx: Path,
+    pianocv_dir: Path,
+    version: str,
+    *,
+    alias: str,
+    bucket: str = "datasets",
+) -> str:
+    key = f"keybed/keyseg-real-{version}/"
+    if _destination_taken(alias, bucket, key):
+        raise FileExistsError(f"{alias}/{bucket}/{key} already has a bundle, pick a new version")
+    with tempfile.TemporaryDirectory() as workdir:
+        work = Path(workdir)
+        build_keyseg_bundle(real_dir, init_onnx, pianocv_dir, work / _BUNDLE_STEM)
+        bundle_path = _compress(work / _BUNDLE_STEM, work)
+        _mc_cp(bundle_path, f"{alias}/{bucket}/{key}{bundle_path.name}")
+        name = bundle_path.name
+    return f"s3://{bucket}/{key}{name}"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="pack and push the real frames and code a keyseg fine-tune needs"
+    )
+    parser.add_argument("--real-dir", type=Path, default=DEFAULT_REAL_DIR)
+    parser.add_argument("--init-onnx", type=Path, default=DEFAULT_INIT_ONNX)
+    parser.add_argument("--pianocv-dir", type=Path, default=DEFAULT_PIANOCV_DIR)
+    parser.add_argument("--version", default=date.today().isoformat())
+    parser.add_argument("--bucket", default="datasets")
+    parser.add_argument("--alias", required=True, help="the mc alias of the S3 host")
+    args = parser.parse_args()
+    uri = push_keyseg(
+        args.real_dir,
+        args.init_onnx,
+        args.pianocv_dir,
+        args.version,
+        alias=args.alias,
+        bucket=args.bucket,
+    )
+    print(uri)
+
+
+if __name__ == "__main__":
+    main()

@@ -12,17 +12,20 @@ export interface HandTracker {
 export async function createHandTracker(
   assets: RuntimeAssets,
 ): Promise<HandTracker> {
-  const handLandmarker = await HandLandmarker.createFromOptions(
-    {
-      wasmLoaderPath: assets.mediapipeLoader,
-      wasmBinaryPath: assets.mediapipeWasm,
-    },
-    {
-      baseOptions: { modelAssetPath: handModelUrl, delegate: "GPU" },
-      numHands: 2,
-      runningMode: "VIDEO",
-    },
-  );
+  const start = (delegate: "GPU" | "CPU"): Promise<HandLandmarker> =>
+    HandLandmarker.createFromOptions(
+      {
+        wasmLoaderPath: assets.mediapipeLoader,
+        wasmBinaryPath: assets.mediapipeWasm,
+      },
+      {
+        baseOptions: { modelAssetPath: handModelUrl, delegate },
+        numHands: 2,
+        runningMode: "VIDEO",
+      },
+    );
+  // a browser without a working WebGL context still finds hands, only slower
+  const handLandmarker = await start("GPU").catch(() => start("CPU"));
   return {
     detect: (frame, timestampMs) =>
       handLandmarker.detectForVideo(frame, timestampMs),

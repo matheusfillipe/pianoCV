@@ -30,7 +30,7 @@ export async function createOcclusionMask(
 }
 
 /** body-skin (hands and arms) and clothes (sleeves) both occlude the glow. */
-const OCCLUDING_CATEGORIES = new Set([2, 4]);
+export const OCCLUDING_CATEGORIES: ReadonlySet<number> = new Set([2, 4]);
 
 let maskCanvas: HTMLCanvasElement | null = null;
 let compositeCanvas: HTMLCanvasElement | null = null;

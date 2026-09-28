@@ -1,4 +1,5 @@
-"""Train KeySegNet on oriented crops streamed from data/synth-keys.
+"""Train KeySegNet on oriented crops streamed from data/synth-keys, and from real frames the app
+labelled itself when given.
 
 Runs on a GPU or locally. `--preview N` writes N crops with their labels drawn over
 them and stops, which is how we check the labels before spending GPU time on them.
@@ -36,8 +37,10 @@ from pianocv.keyseg import (
     crop_for,
     crop_image,
     export_keyseg_onnx,
+    keyseg_from_onnx,
     label_map,
     preprocess_crop,
+    refine_by_brightness,
 )
 from pianocv.trainkeymatch import _augment_strip
 
@@ -75,21 +78,33 @@ def _sample(
         raise FileNotFoundError(f"cannot read frame {frame.image_path}")
     crop = crop_for(perturb_quad(frame.corners_px, rng, config))
     pixels = crop_image(image, crop)
+    labels = label_map(frame, crop)
+    if frame.real:
+        labels = refine_by_brightness(labels, pixels)
     if augment:
         pixels = _augment_strip(pixels, rng)
-    return pixels, label_map(frame, crop)
+    return pixels, labels
 
 
 class KeySegDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
-    """Draws a fresh quad perturbation and augmentation of a random frame on every read."""
+    """Draws a fresh quad perturbation and augmentation of a random frame on every read, from
+    the real frames `real_share` of the time when there are any."""
 
     def __init__(
-        self, frames: list[SynthKeysFrame], length: int, seed: int, config: PerturbConfig
+        self,
+        frames: list[SynthKeysFrame],
+        length: int,
+        seed: int,
+        config: PerturbConfig,
+        real: list[SynthKeysFrame] | None = None,
+        real_share: float = 0.0,
     ) -> None:
         self.frames = frames
         self.length = length
         self.seed = seed
         self.config = config
+        self.real = real or []
+        self.real_share = real_share if self.real else 0.0
         self.epoch = 0
 
     def set_epoch(self, epoch: int) -> None:
@@ -102,7 +117,8 @@ class KeySegDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         worker = get_worker_info()
         worker_id = worker.id if worker is not None else 0
         rng = np.random.default_rng((self.seed, self.epoch, worker_id, index))
-        frame = self.frames[int(rng.integers(len(self.frames)))]
+        pool = self.real if rng.random() < self.real_share else self.frames
+        frame = pool[int(rng.integers(len(pool)))]
         pixels, labels = _sample(frame, rng, self.config, augment=True)
         return torch.from_numpy(preprocess_crop(pixels)), torch.from_numpy(labels.astype(np.int64))
 
@@ -113,6 +129,7 @@ class EpochMetrics:
     loss: float
     val_loss: float
     iou: tuple[float, ...]
+    real_iou: tuple[float, ...] | None = None
 
 
 def _validation(
@@ -153,6 +170,18 @@ def _evaluate(
     return total / max(len(samples), 1), mean_iou
 
 
+def _device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def _held_out(frame: SynthKeysFrame, clips: tuple[str, ...]) -> bool:
+    return any(clip in frame.image_path.stem for clip in clips)
+
+
 def train_keyseg(
     data_dir: Path = DEFAULT_DATA_DIR,
     epochs: int = _DEFAULT_EPOCHS,
@@ -163,8 +192,13 @@ def train_keyseg(
     workers: int = 4,
     pretrained: bool = True,
     on_epoch: Callable[[EpochMetrics], None] | None = None,
+    *,
+    init_onnx: Path | None = None,
+    real_dir: Path | None = None,
+    real_share: float = 0.0,
+    hold_out: tuple[str, ...] = (),
 ) -> tuple[KeySegNet, list[EpochMetrics]]:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = _device()
     print(f"training device {device}", flush=True)
     frames = load_synth_keys(data_dir)
     if not frames:
@@ -174,14 +208,32 @@ def train_keyseg(
     val_indices = set(order[:val_count].tolist())
     train_frames = [frame for i, frame in enumerate(frames) if i not in val_indices] or frames
     val_frames = [frame for i, frame in enumerate(frames) if i in val_indices] or frames
+    real = load_synth_keys(real_dir) if real_dir is not None else []
+    real_train = [frame for frame in real if not _held_out(frame, hold_out)]
+    real_val = [frame for frame in real if _held_out(frame, hold_out)]
+    print(f"real frames {len(real_train)} to train on, {len(real_val)} held out", flush=True)
 
     config = PerturbConfig()
-    dataset = KeySegDataset(train_frames, steps_per_epoch * batch, seed, config)
+    dataset = KeySegDataset(
+        train_frames, steps_per_epoch * batch, seed, config, real_train, real_share
+    )
     loader = DataLoader(dataset, batch_size=batch, num_workers=workers, shuffle=False)
     validation = _validation(val_frames, config)
+    real_validation = _validation(real_val, config)
 
     torch.manual_seed(seed)
-    model = KeySegNet(pretrained=pretrained).to(device)
+    model = (
+        keyseg_from_onnx(str(init_onnx))
+        if init_onnx is not None
+        else KeySegNet(pretrained=pretrained)
+    ).to(device)
+    # a model rebuilt from its export carries the folded statistics in its batch norms, and a
+    # batch of crops would overwrite them, so those stay in eval mode while the rest trains
+    frozen_norms = (
+        [module for module in model.modules() if isinstance(module, nn.BatchNorm2d)]
+        if init_onnx is not None
+        else []
+    )
     loss_fn = nn.CrossEntropyLoss(
         weight=torch.tensor(_CLASS_WEIGHTS, device=device), ignore_index=IGNORE
     )
@@ -193,6 +245,8 @@ def train_keyseg(
     for epoch in range(epochs):
         dataset.set_epoch(epoch)
         model.train()
+        for norm in frozen_norms:
+            norm.eval()
         running = 0.0
         steps = 0
         for crops, labels in loader:
@@ -205,11 +259,23 @@ def train_keyseg(
             running += float(loss.detach())
             steps += 1
         val_loss, iou = _evaluate(model, validation, loss_fn, device, batch)
-        metrics = EpochMetrics(epoch + 1, running / max(steps, 1), val_loss, iou)
+        real_iou = (
+            _evaluate(model, real_validation, loss_fn, device, batch)[1]
+            if real_validation
+            else None
+        )
+        metrics = EpochMetrics(epoch + 1, running / max(steps, 1), val_loss, iou, real_iou)
         history.append(metrics)
+        held = (
+            f" held out real white {real_iou[1]:.3f} black {real_iou[2]:.3f} "
+            f"boundary {real_iou[3]:.3f}"
+            if real_iou is not None
+            else ""
+        )
         print(
             f"epoch {metrics.epoch}/{epochs} loss {metrics.loss:.4f} val_loss {val_loss:.4f} "
-            f"iou bg {iou[0]:.3f} white {iou[1]:.3f} black {iou[2]:.3f} boundary {iou[3]:.3f}",
+            f"iou bg {iou[0]:.3f} white {iou[1]:.3f} black {iou[2]:.3f} boundary {iou[3]:.3f}"
+            f"{held}",
             flush=True,
         )
         if on_epoch is not None:
@@ -252,6 +318,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--steps-per-epoch", type=int, default=_DEFAULT_STEPS_PER_EPOCH)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--preview", type=int, default=0, help="write N label previews and stop")
+    parser.add_argument("--init-onnx", type=Path, help="start from the weights of this export")
+    parser.add_argument("--real-dir", type=Path, help="real frames labelled in the same format")
+    parser.add_argument("--real-share", type=float, default=0.5)
+    parser.add_argument(
+        "--hold-out", default="", help="comma separated clip names kept for validation only"
+    )
     parser.add_argument("--mlflow", action="store_true", help="log params, metrics and artifacts")
     parser.add_argument(
         "--mlflow-experiment", default=os.environ.get("MLFLOW_EXPERIMENT_NAME", "keyseg")
@@ -280,6 +352,10 @@ def main() -> None:
                     "lr": args.lr,
                     "seed": args.seed,
                     "steps_per_epoch": args.steps_per_epoch,
+                    "init_onnx": str(args.init_onnx or ""),
+                    "real_dir": str(args.real_dir or ""),
+                    "real_share": args.real_share,
+                    "hold_out": args.hold_out,
                 }
             )
 
@@ -293,6 +369,15 @@ def main() -> None:
                     "iou_white": metrics.iou[WHITE],
                     "iou_black": metrics.iou[BLACK],
                     "iou_boundary": metrics.iou[BOUNDARY],
+                    **(
+                        {
+                            "real_iou_white": metrics.real_iou[WHITE],
+                            "real_iou_black": metrics.real_iou[BLACK],
+                            "real_iou_boundary": metrics.real_iou[BOUNDARY],
+                        }
+                        if metrics.real_iou is not None
+                        else {}
+                    ),
                 },
                 step=metrics.epoch,
             )
@@ -306,6 +391,10 @@ def main() -> None:
             args.steps_per_epoch,
             args.workers,
             on_epoch=log_epoch,
+            init_onnx=args.init_onnx,
+            real_dir=args.real_dir,
+            real_share=args.real_share,
+            hold_out=tuple(clip for clip in args.hold_out.split(",") if clip),
         )
         args.out_dir.mkdir(parents=True, exist_ok=True)
         pt_path = args.out_dir / "keyseg.pt"

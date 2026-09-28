@@ -12,7 +12,7 @@ PORT ?= 5274
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
         build web-typecheck web-lint web-fix web-test web-build dev dev-alt model site publish-models clean lab-export \
         lab-evaluate lab-real-seg2-prepare lab-relabel-keys lab-compare lab-trainseg2 lab-dataset-push \
-        lab-keymatch-train lab-keymatch-push lab-keyseg-train
+        lab-keymatch-train lab-keymatch-push lab-keyseg-train lab-keyseg-labels lab-keyseg-push
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -160,6 +160,9 @@ lab-browser-gridtest: ## run the served browser ONNX model over the deterministi
 lab-keys-eval: ## run the live keyboard pipeline headless on every saved recording and report hold time, trim, key count and black-key alignment
 	cd web && bun keys-eval-runner.mjs
 
+lab-keyseg-labels: ## label frames of every saved recording with the keys the app fits to them, for training (data/real-keys)
+	cd web && PIANOCV_EXPORT_LABELS=data/real-keys PIANOCV_SYNTHETIC=none bun keys-eval-runner.mjs
+
 lab-corpus-bake: ## bake data/synth down to the net's input size (data/corpus); ARGS="--synth-dir ... --out-dir ..." to bake other directories, repeat --synth-dir to merge several
 	cd tools && uv run python -m pianocv.bake $(ARGS)
 
@@ -194,6 +197,9 @@ lab-keymatch-train: ## train the key matcher locally on data/synth-keys
 
 lab-keyseg-train: ## train the per-key segmenter locally on data/synth-keys; ARGS="--preview 12" draws labels only
 	cd tools && uv run python -m pianocv.trainkeyseg $(ARGS)
+
+lab-keyseg-push: ## pack data/real-keys, pianocv and the published keyseg.onnx for a fine-tune and upload them with mc (ARGS="--alias <mc alias> --version <v>")
+	cd tools && uv run python -m pianocv.keysegpush $(ARGS)
 
 lab-keymatch-push: ## pack data/synth-keys and pianocv into a bundle and upload it to an S3 bucket with mc (ARGS="--alias <mc alias> --version <v>")
 	cd tools && uv run python -m pianocv.keymatchpush $(ARGS)

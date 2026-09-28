@@ -46,6 +46,11 @@ class SynthKeysFrame:
     corners_px: np.ndarray
     keys: list[SidecarKey]
     image_size: tuple[int, int]
+    # white where something covers the keys, as a hand does on a real frame, which training
+    # leaves out
+    ignore_mask: Path | None = None
+    # labelled by the app from its own fit on a real recording, rather than rendered
+    real: bool = False
 
 
 def _parse_face(raw: object, scale: np.ndarray, what: str) -> np.ndarray:
@@ -86,12 +91,17 @@ def parse_synth_keys_sidecar(sidecar_path: Path) -> SynthKeysFrame:
         raise ValueError(f"sidecar {sidecar_path} has invalid image dimensions")
     if not isinstance(keys, list):
         raise ValueError(f"sidecar {sidecar_path} must list keys")
+    ignore_mask = data.get("ignoreMask")
+    if ignore_mask is not None and not isinstance(ignore_mask, str):
+        raise ValueError(f"sidecar {sidecar_path} ignoreMask must name a file")
     scale = np.array([float(width), float(height)])
     return SynthKeysFrame(
         image_path=sidecar_path.with_suffix(".png"),
         corners_px=_parse_face(corners, scale, "keybed quad"),
         keys=[_parse_key(key, scale) for key in keys],
         image_size=(width, height),
+        ignore_mask=None if ignore_mask is None else sidecar_path.parent / ignore_mask,
+        real=data.get("kind") == "real-keys",
     )
 
 

@@ -1,5 +1,7 @@
+from dataclasses import replace
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 
@@ -15,6 +17,8 @@ from pianocv.keyseg import (
     black_silhouette,
     class_iou,
     crop_for,
+    export_keyseg_onnx,
+    keyseg_from_onnx,
     label_map,
     preprocess_crop,
 )
@@ -70,6 +74,19 @@ def test_labels_mark_white_keys_black_keys_and_the_lines_between_white_keys() ->
     assert at(300, 290) == BOUNDARY
 
 
+def test_pixels_a_hand_covers_are_ignored(tmp_path: Path) -> None:
+    mask = np.zeros((480, 640), np.uint8)
+    cv2.fillPoly(mask, [np.array([(120, 250), (180, 250), (150, 299)], np.int32)], 255)
+    cv2.imwrite(str(tmp_path / "hand.png"), mask)
+    frame = replace(_frame(), ignore_mask=tmp_path / "hand.png")
+    crop = crop_for(QUAD)
+    labels = label_map(frame, crop)
+    covered = np.round(crop.points(np.array([[150.0, 270.0]]))[0]).astype(int)
+    beside = np.round(crop.points(np.array([[350.0, 270.0]]))[0]).astype(int)
+    assert labels[covered[1], covered[0]] == IGNORE
+    assert labels[beside[1], beside[0]] == WHITE
+
+
 def test_crop_pixels_outside_the_camera_frame_are_ignored() -> None:
     frame = _frame(image_size=(300, 480))
     crop = crop_for(QUAD)
@@ -89,3 +106,24 @@ def test_model_keeps_the_crop_resolution() -> None:
 def test_preprocess_gives_the_model_a_channels_first_crop() -> None:
     crop = np.zeros((CROP_HEIGHT, CROP_WIDTH, 3), dtype=np.uint8)
     assert preprocess_crop(crop).shape == (3, CROP_HEIGHT, CROP_WIDTH)
+
+
+def test_a_model_rebuilt_from_its_export_gives_the_same_classes(tmp_path: Path) -> None:
+    torch.manual_seed(0)
+    model = KeySegNet(pretrained=False)
+    with torch.no_grad():
+        for norm in model.modules():
+            if isinstance(norm, torch.nn.BatchNorm2d):
+                assert norm.running_mean is not None and norm.running_var is not None
+                norm.weight.uniform_(0.5, 1.5)
+                norm.bias.uniform_(-0.2, 0.2)
+                norm.running_mean.uniform_(-0.2, 0.2)
+                norm.running_var.uniform_(0.5, 1.5)
+    path = tmp_path / "keyseg.onnx"
+    export_keyseg_onnx(model, str(path))
+    rebuilt = keyseg_from_onnx(str(path))
+    crop = torch.randn(1, 3, CROP_HEIGHT, CROP_WIDTH)
+    with torch.no_grad():
+        expected = torch.softmax(model.eval()(crop), dim=1)
+        got = torch.softmax(rebuilt(crop), dim=1)
+    assert float((expected - got).abs().max()) < 1e-3

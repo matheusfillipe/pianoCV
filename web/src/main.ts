@@ -70,6 +70,10 @@ declare global {
     // the keys drawn this frame, and the template they were snapped from, as frame fractions
     pianocvDrawnKeys?: readonly DrawnKey[];
     pianocvTemplateKeys?: readonly DrawnKey[];
+    // the template's faces before they were merged, which is what a training label is made of
+    pianocvKeyFaces?: readonly DetectedKey[];
+    // the hands found in the latest frame, so a training label can leave their pixels out
+    pianocvHands?: HandLandmarkerResult | null;
   }
 }
 
@@ -339,6 +343,7 @@ function startLoop(
     if (handTracker && hud.state.hands && video.currentTime !== lastVideoTime) {
       lastVideoTime = video.currentTime;
       hands = handTracker.detect(video, now);
+      window.pianocvHands = hands;
     }
     if (
       occlusionMask &&
@@ -458,6 +463,7 @@ function startLoop(
         trusted && (hud.state.keys || hud.state.glow)
           ? projectKeyFaces(trusted, followed, size)
           : [];
+      window.pianocvKeyFaces = faces;
       const template = oneFacePerKey(faces);
       window.pianocvTemplateKeys = template;
       const keys = liveOutline
@@ -607,7 +613,16 @@ async function boot(): Promise<void> {
       () => hud.state.corners,
       () => videoBox(video, canvas),
     );
-    const handTracker = await createHandTracker(viteAssets).catch(() => null);
+    const handTracker = await createHandTracker(viteAssets).then(
+      (tracker) => {
+        hud.status("hands", "hand tracker ready");
+        return tracker;
+      },
+      (err) => {
+        hud.status("hands", `hand tracker unavailable (${errorMessage(err)})`);
+        return null;
+      },
+    );
     const occlusionMask = await occlusionLoading;
     const labelCorners = startLoop(
       video,

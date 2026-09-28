@@ -1,5 +1,7 @@
+import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import type { Point } from "./homography";
 import { type KeyRegion } from "./keyseg";
+import { type DetectedKey } from "./keystrip";
 declare global {
     interface Window {
         pianocvHeldQuad?: Point[];
@@ -11,6 +13,8 @@ declare global {
         };
         pianocvDrawnKeys?: readonly DrawnKey[];
         pianocvTemplateKeys?: readonly DrawnKey[];
+        pianocvKeyFaces?: readonly DetectedKey[];
+        pianocvHands?: HandLandmarkerResult | null;
     }
 }
 type DrawnKey = {

@@ -74,8 +74,8 @@ module = ["pianocv.train", "pianocv.trainseg", "pianocv.trainseg2", "pianocv.tra
 disallow_untyped_calls = false
 
 [tool.deptry.per_rule_ignores]
-# torch.onnx.export loads both at call time; neither is ever imported by name
-DEP002 = ["onnx", "onnxscript"]
+# torch.onnx.export loads it at call time; it is never imported by name
+DEP002 = ["onnxscript"]
 # trainseg2 imports mlflow only behind --mlflow and runs with it absent, so it stays a dev dependency
 DEP004 = ["mlflow"]
 

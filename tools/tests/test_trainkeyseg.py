@@ -4,7 +4,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
+import torch
 
+from pianocv.keyseg import KeySegNet, export_keyseg_onnx, keyseg_from_onnx
 from pianocv.trainkeyseg import (
     EpochMetrics,
     _build_parser,
@@ -77,6 +79,39 @@ def test_train_keyseg_runs_a_tiny_schedule(tmp_path: Path) -> None:
     assert seen == history
     assert len(history[0].iou) == 4
     assert not model.training
+
+
+def test_fine_tuning_from_an_export_keeps_its_statistics_and_scores_held_out_real_frames(
+    tmp_path: Path,
+) -> None:
+    synthetic = tmp_path / "synth"
+    real = tmp_path / "real"
+    synthetic.mkdir()
+    real.mkdir()
+    _write_frames(synthetic, 2)
+    _write_frames(real, 2)
+    (real / "f1.png").rename(real / "rec-held-f1.png")
+    (real / "f1.json").rename(real / "rec-held-f1.json")
+    export = tmp_path / "start.onnx"
+    export_keyseg_onnx(KeySegNet(pretrained=False), str(export))
+    started = keyseg_from_onnx(str(export))
+    model, history = train_keyseg(
+        synthetic,
+        epochs=1,
+        batch=1,
+        steps_per_epoch=1,
+        workers=0,
+        init_onnx=export,
+        real_dir=real,
+        real_share=1.0,
+        hold_out=("rec-held",),
+    )
+    assert history[0].real_iou is not None
+    for before, after in zip(started.modules(), model.cpu().modules(), strict=True):
+        if isinstance(before, torch.nn.BatchNorm2d):
+            assert isinstance(after, torch.nn.BatchNorm2d)
+            assert after.running_var is not None and before.running_var is not None
+            assert torch.equal(after.running_var, before.running_var)
 
 
 def test_previews_draw_the_labels_over_the_crops(tmp_path: Path) -> None:

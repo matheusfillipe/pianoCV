@@ -304,6 +304,10 @@ async function evaluateClip(cdp, clipUrl, clip) {
     )
     .then((response) => response?.result?.result?.value ?? null)
     .catch(() => null);
+  if (labelsDir) {
+    result.labels = await exportLabels(cdp, clip);
+    console.log(`${clip}: ${result.labels}`);
+  }
   const detectMatch = /^([0-9.]+)\s*ms$/.exec(result.detectText);
   result.detectMs = detectMatch ? Number(detectMatch[1]) : null;
   const strip = await cdp
@@ -321,6 +325,47 @@ async function evaluateClip(cdp, clipUrl, clip) {
     );
   }
   return result;
+}
+
+// PIANOCV_EXPORT_LABELS=<dir> also saves frames the page labelled itself, for training
+const labelsDir = process.env.PIANOCV_EXPORT_LABELS
+  ? join(root, process.env.PIANOCV_EXPORT_LABELS)
+  : null;
+const LABELS_EXPRESSION = `import("/src/keylabels.ts").then((m) => m.captureKeyLabels())`;
+const LABELS_TIMEOUT_MS = 90_000;
+
+async function exportLabels(cdp, clip) {
+  const found = await cdp
+    .send(
+      "Runtime.evaluate",
+      {
+        expression: LABELS_EXPRESSION,
+        returnByValue: true,
+        awaitPromise: true,
+      },
+      LABELS_TIMEOUT_MS,
+    )
+    .then((response) => response?.result?.result?.value ?? null)
+    .catch(() => null);
+  if (found?.kind !== "labelled") return found?.reason ?? "no labels";
+  await mkdir(labelsDir, { recursive: true });
+  const stem = clip.replace(/\.webm$/, "");
+  for (const [i, label] of found.labels.entries()) {
+    const name = `${stem}-${String(i).padStart(2, "0")}`;
+    await writeFile(
+      join(labelsDir, `${name}.png`),
+      Buffer.from(label.png.split(",")[1], "base64"),
+    );
+    await writeFile(
+      join(labelsDir, `${name}.ignore.png`),
+      Buffer.from(label.ignorePng.split(",")[1], "base64"),
+    );
+    await writeFile(
+      join(labelsDir, `${name}.json`),
+      JSON.stringify({ ...label.sidecar, ignoreMask: `${name}.ignore.png` }),
+    );
+  }
+  return `${found.labels.length} labelled`;
 }
 
 // how still the drawn keys stay and how well they sit on the picture, measured on the page
@@ -751,7 +796,8 @@ try {
     browser,
     [
       "--headless=new",
-      "--disable-gpu",
+      // the hand tracker behind a label's hand masks needs the GPU
+      ...(labelsDir ? [] : ["--disable-gpu"]),
       "--no-sandbox",
       "--remote-debugging-port=0",
       "--autoplay-policy=no-user-gesture-required",
@@ -777,9 +823,30 @@ try {
     results.push(await evaluateClip(cdp, clipUrl, clip));
   }
 
+  const synthetic =
+    process.env.PIANOCV_SYNTHETIC === "none" ? null : await runSynthetic(cdp);
+
+  const reportPath = join(root, "data", "evaluations", `${run}.json`);
+  await mkdir(join(root, "data", "evaluations"), { recursive: true });
+  await writeFile(
+    reportPath,
+    JSON.stringify({ run, results, synthetic }, null, 2),
+  );
+
+  console.log(renderTable(results));
+  if (synthetic !== null) console.log(`\n${renderSynthetic(synthetic)}`);
+  console.log(`\nfull report: ${reportPath}`);
+} finally {
+  if (cdp) cdp.close();
+  if (headless) await stop(headless);
+  await rm(profile, { recursive: true, force: true });
+  await server.close();
+}
+
+async function runSynthetic(cdp) {
   await cdp.send("Page.navigate", { url: `http://127.0.0.1:${vitePort}/` });
   await new Promise((resolve) => setTimeout(resolve, 2_000));
-  const synthetic = await cdp
+  return cdp
     .send(
       "Runtime.evaluate",
       {
@@ -795,20 +862,4 @@ try {
         ? JSON.parse(value)
         : { error: response?.result?.exceptionDetails?.exception?.description };
     });
-
-  const reportPath = join(root, "data", "evaluations", `${run}.json`);
-  await mkdir(join(root, "data", "evaluations"), { recursive: true });
-  await writeFile(
-    reportPath,
-    JSON.stringify({ run, results, synthetic }, null, 2),
-  );
-
-  console.log(renderTable(results));
-  console.log(`\n${renderSynthetic(synthetic)}`);
-  console.log(`\nfull report: ${reportPath}`);
-} finally {
-  if (cdp) cdp.close();
-  if (headless) await stop(headless);
-  await rm(profile, { recursive: true, force: true });
-  await server.close();
 }

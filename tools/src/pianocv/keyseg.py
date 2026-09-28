@@ -6,10 +6,13 @@ where to look, never what shape a key has.
 """
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 import cv2
 import numpy as np
+import onnx
 import torch
+from onnx import numpy_helper
 from torch import nn
 from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small
 
@@ -27,6 +30,12 @@ IGNORE = 255
 CROP_MARGIN_ALONG = 0.08
 CROP_MARGIN_ACROSS = 0.15
 BOUNDARY_PX = 1
+# a hand mask comes from a segmenter's low-resolution output, so its edge is grown before use
+IGNORE_GROWTH_PX = 7
+# a real label is only corrected where its pixel sits this share of the way past the split
+# towards the other class's median, so a soft edge or a glint keeps its label
+_REFINE_MARGIN = 0.35
+_REFINE_LEAST_PIXELS = 100
 
 _SKIP_LAYERS = (1, 3, 8, 12)
 _SKIP_CHANNELS = (16, 24, 48, 576)
@@ -106,6 +115,13 @@ def label_map(frame: SynthKeysFrame, crop: Crop) -> np.ndarray:
         if key.black:
             outline = crop.points(black_silhouette(key))
             cv2.fillPoly(labels, [np.round(outline).astype(np.int32)], BLACK)
+    if frame.ignore_mask is not None:
+        covered = cv2.imread(str(frame.ignore_mask), cv2.IMREAD_GRAYSCALE)
+        if covered is None:
+            raise FileNotFoundError(f"cannot read ignore mask {frame.ignore_mask}")
+        covered = cv2.dilate(covered, np.ones((IGNORE_GROWTH_PX, IGNORE_GROWTH_PX), np.uint8))
+        warped = cv2.warpAffine(covered, crop.to_crop, (CROP_WIDTH, CROP_HEIGHT))
+        labels[warped > 127] = IGNORE
     width, height = frame.image_size
     inside = cv2.warpAffine(
         np.ones((height, width), dtype=np.uint8), crop.to_crop, (CROP_WIDTH, CROP_HEIGHT)
@@ -178,6 +194,38 @@ def class_iou(predicted: np.ndarray, truth: np.ndarray) -> list[float]:
     return ious
 
 
+def refine_by_brightness(labels: np.ndarray, crop_rgb: np.ndarray) -> np.ndarray:
+    """A real frame's labels, corrected by its own pixels.
+
+    The app's fit places a black key within a fraction of a key, and far away that is enough to
+    run one black key into the next. A pixel keeps a black label only where it is clearly dark:
+    clearly bright it is the white key between two black ones, and in between it is left out,
+    as the shadowed strip between two black keys at the back is. A pixel labelled white that
+    is clearly dark is a shadow or a black key the fit missed, and is left out too, as is every
+    black label on a row whose white keys are dark, which is the case's lip or a shadow.
+    """
+    grey = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2GRAY)
+    keys = (labels == WHITE) | (labels == BLACK)
+    if int(keys.sum()) < _REFINE_LEAST_PIXELS:
+        return labels
+    split, _ = cv2.threshold(grey[keys].reshape(-1, 1), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    bright = float(np.median(grey[keys & (grey >= split)]))
+    dark = float(np.median(grey[keys & (grey < split)]))
+    clearly_dark = grey < split - _REFINE_MARGIN * (split - dark)
+    clearly_bright = grey > split + _REFINE_MARGIN * (bright - split)
+    refined = labels.copy()
+    refined[(labels == BLACK) & ~clearly_dark] = IGNORE
+    refined[(labels == BLACK) & clearly_bright] = WHITE
+    refined[(labels == WHITE) & clearly_dark] = IGNORE
+    # a crop row whose white keys are dark too runs through the case or a shadow, where a dark
+    # pixel says nothing about a black key; the crop's rows run across the keys
+    for row in range(labels.shape[0]):
+        whites = grey[row][labels[row] == WHITE]
+        if whites.size and float(np.median(whites)) < split:
+            refined[row][labels[row] == BLACK] = IGNORE
+    return refined
+
+
 class _Softmax(nn.Module):
     def __init__(self, model: KeySegNet) -> None:
         super().__init__()
@@ -198,3 +246,64 @@ def export_keyseg_onnx(model: KeySegNet, onnx_path: str) -> None:
         opset_version=17,
         dynamo=False,
     )
+
+
+def keyseg_from_onnx(onnx_path: str) -> KeySegNet:
+    """The KeySegNet an exported ONNX file holds, to train on from where that model left off.
+
+    The export folds each batch norm into the convolution before it, so we copy every
+    convolution in the order the network runs them and set each batch norm to pass values
+    through, with the folded bias as its own. Training on it should keep the batch norms in eval
+    mode, since their running statistics now stand for the folded ones.
+    """
+    graph = onnx.load(onnx_path).graph
+    weights = {tensor.name: numpy_helper.to_array(tensor) for tensor in graph.initializer}
+    # the exporter keeps one copy of identical tensors and names the others through Identity nodes
+    for node in graph.node:
+        if node.op_type == "Identity" and node.input[0] in weights:
+            weights[node.output[0]] = weights[node.input[0]]
+    folded = [node for node in graph.node if node.op_type == "Conv"]
+    model = KeySegNet(pretrained=False).eval()
+    ran: list[nn.Conv2d] = []
+    hooks = [
+        module.register_forward_hook(lambda conv, _inputs, _output: ran.append(conv))
+        for module in model.modules()
+        if isinstance(module, nn.Conv2d)
+    ]
+    with torch.no_grad():
+        model(torch.zeros(1, 3, CROP_HEIGHT, CROP_WIDTH))
+    for hook in hooks:
+        hook.remove()
+    norm_after: dict[nn.Conv2d, nn.BatchNorm2d] = {}
+    for parent in model.modules():
+        children = list(parent.children())
+        for first, second in pairwise(children):
+            if isinstance(first, nn.Conv2d) and isinstance(second, nn.BatchNorm2d):
+                norm_after[first] = second
+    if len(ran) != len(folded):
+        raise ValueError(f"{onnx_path} has {len(folded)} convolutions, KeySegNet runs {len(ran)}")
+    with torch.no_grad():
+        for conv, node in zip(ran, folded, strict=True):
+            weight = torch.from_numpy(weights[node.input[1]].copy())
+            if weight.shape != conv.weight.shape:
+                raise ValueError(f"{onnx_path} convolution {node.name} does not fit KeySegNet")
+            bias = (
+                torch.from_numpy(weights[node.input[2]].copy())
+                if len(node.input) > 2
+                else torch.zeros(weight.shape[0])
+            )
+            conv.weight.copy_(weight)
+            norm = norm_after.get(conv)
+            if norm is None:
+                if conv.bias is not None:
+                    conv.bias.copy_(bias)
+                continue
+            if conv.bias is not None:
+                conv.bias.zero_()
+            if norm.running_mean is None or norm.running_var is None:
+                raise ValueError("KeySegNet batch norms must track running statistics")
+            norm.weight.fill_(1.0)
+            norm.bias.copy_(bias)
+            norm.running_mean.zero_()
+            norm.running_var.fill_(1.0 - norm.eps)
+    return model
