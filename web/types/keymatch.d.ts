@@ -12,6 +12,8 @@ export type Matched = {
     readonly evidence: KeyEvidence;
 };
 export type KeyMatcher = {
+    /** Where the model runs: "webgpu", or "wasm" where the GPU could not start it. */
+    readonly backend: string;
     /** The keys the matcher sees on `quad`, once the quad is squared to the keys, or null when it
      * saw too little to stand in for the brightness rules. */
     readonly match: (source: SourceImage, quad: readonly Point[]) => Promise<Matched | null>;

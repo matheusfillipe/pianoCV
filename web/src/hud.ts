@@ -76,11 +76,10 @@ function row(parent: HTMLElement, label: string): HTMLElement {
 }
 
 export function createHud(): Hud {
-  // corners stay on: they are the label that capture saves, and a hidden label is a wrong label
   // auto-labelling stays off: it writes pictures of whatever the camera sees to disk
   const state: HudState = {
     live: true,
-    corners: true,
+    corners: false,
     hands: false,
     input: false,
     label: false,

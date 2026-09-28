@@ -10,27 +10,44 @@ import {
   keyRegions,
 } from "./keyseg";
 
-export type SegmentRequest =
+export type GpuRequest =
   | {
-      readonly kind: "init";
+      readonly kind: "open";
+      readonly id: number;
       readonly url: string;
       readonly wasm: string;
     }
   | {
+      readonly kind: "run";
+      readonly id: number;
+      readonly url: string;
+      readonly input: Float32Array;
+      readonly dims: readonly number[];
+    }
+  | {
       readonly kind: "segment";
       readonly id: number;
+      readonly url: string;
       readonly frame: ImageBitmap;
       readonly crop: Crop;
     };
 
-export type SegmentReply =
+export type GpuReply =
   | {
-      readonly kind: "ready";
+      readonly kind: "opened";
+      readonly id: number;
+      /** Where the model runs: "webgpu", or "wasm" where the GPU could not start it. */
       readonly backend: string;
       /** Why the GPU could not run the model, when it could not. */
       readonly gpuFailure: string | null;
     }
-  | { readonly kind: "failed"; readonly reason: string }
+  | { readonly kind: "failed"; readonly id: number; readonly reason: string }
+  | {
+      readonly kind: "ran";
+      readonly id: number;
+      /** The model's first output, or null when it gave none. */
+      readonly output: Float32Array | null;
+    }
   | {
       readonly kind: "segmented";
       readonly id: number;
@@ -46,29 +63,34 @@ const plane = CROP_WIDTH * CROP_HEIGHT;
 const input = new Float32Array(3 * plane);
 const canvas = new OffscreenCanvas(CROP_WIDTH, CROP_HEIGHT);
 const ctx = canvas.getContext("2d", { willReadFrequently: true });
-let session: ort.InferenceSession | null = null;
+const sessions = new Map<string, ort.InferenceSession>();
 
-const post = (reply: SegmentReply): void => {
-  self.postMessage(reply);
+const post = (reply: GpuReply, transfer: Transferable[] = []): void => {
+  self.postMessage(reply, { transfer });
 };
 
-async function start(url: string, wasm: string): Promise<void> {
+async function open(id: number, url: string, wasm: string): Promise<void> {
   // the bundled build carries its own WebGPU loader, which an overridden script would replace
   ort.env.wasm.wasmPaths = { wasm };
-  // a GPU adapter onnxruntime rejects fails the WebGPU start, and this worker's own runtime then
-  // falls back to wasm without touching the page's other models
+  // a GPU adapter onnxruntime rejects fails the WebGPU start, and this worker's runtime then
+  // falls back to wasm for that model
   let gpuFailure: string | null = null;
   for (const providers of [["webgpu"], ["wasm"]]) {
     try {
-      session = await ort.InferenceSession.create(url, {
+      const session = await ort.InferenceSession.create(url, {
         executionProviders: providers,
         graphOptimizationLevel: "all",
       });
-      post({ kind: "ready", backend: providers[0], gpuFailure });
+      sessions.set(url, session);
+      post({ kind: "opened", id, backend: providers[0], gpuFailure });
       return;
     } catch (error) {
       if (providers[0] === "wasm") {
-        post({ kind: "failed", reason: `${gpuFailure} then ${String(error)}` });
+        post({
+          kind: "failed",
+          id,
+          reason: `${gpuFailure} then ${String(error)}`,
+        });
       } else {
         gpuFailure = String(error);
       }
@@ -108,14 +130,27 @@ function drawCrop(
   target.drawImage(frame, 0, 0);
 }
 
+async function firstOutput(
+  session: ort.InferenceSession,
+  input: Float32Array,
+  dims: readonly number[],
+): Promise<Float32Array | null> {
+  const outputs = await session.run({
+    [session.inputNames[0]]: new ort.Tensor("float32", input, dims),
+  });
+  const data = await outputs[session.outputNames[0]]?.getData();
+  return data instanceof Float32Array ? data : null;
+}
+
 async function segment(
+  session: ort.InferenceSession | undefined,
   frame: ImageBitmap,
   crop: Crop,
 ): Promise<{
   corners: { x: number; y: number }[] | null;
   regions: KeyRegion[];
 }> {
-  if (session === null || ctx === null) {
+  if (session === undefined || ctx === null) {
     frame.close();
     return { corners: null, regions: [] };
   }
@@ -127,16 +162,13 @@ async function segment(
       input[c * plane + i] = (pixels[i * 4 + c] / 255 - MEAN[c]) / STD[c];
     }
   }
-  const outputs = await session.run({
-    [session.inputNames[0]]: new ort.Tensor("float32", input, [
-      1,
-      3,
-      CROP_HEIGHT,
-      CROP_WIDTH,
-    ]),
-  });
-  const probabilities = await outputs[session.outputNames[0]]?.getData();
-  if (!(probabilities instanceof Float32Array)) {
+  const probabilities = await firstOutput(session, input, [
+    1,
+    3,
+    CROP_HEIGHT,
+    CROP_WIDTH,
+  ]);
+  if (probabilities === null) {
     return { corners: null, regions: [] };
   }
   const classes = classesOf(probabilities);
@@ -147,19 +179,31 @@ async function segment(
   };
 }
 
-// messages arrive one at a time and we await each, so one session never runs two inferences
+// messages arrive one at a time and we await each, so the GPU never runs two inferences at once
 let queue: Promise<void> = Promise.resolve();
-self.onmessage = (event: MessageEvent<SegmentRequest>) => {
+self.onmessage = (event: MessageEvent<GpuRequest>) => {
   const request = event.data;
   queue = queue.then(async () => {
-    if (request.kind === "init") {
-      await start(request.url, request.wasm);
+    if (request.kind === "open") {
+      await open(request.id, request.url, request.wasm);
       return;
     }
-    const found = await segment(request.frame, request.crop).catch(() => ({
-      corners: null,
-      regions: [],
-    }));
+    const session = sessions.get(request.url);
+    if (request.kind === "run") {
+      const output = session
+        ? await firstOutput(session, request.input, request.dims).catch(
+            () => null,
+          )
+        : null;
+      post(
+        { kind: "ran", id: request.id, output },
+        output ? [output.buffer] : [],
+      );
+      return;
+    }
+    const found = await segment(session, request.frame, request.crop).catch(
+      () => ({ corners: null, regions: [] }),
+    );
     post({ kind: "segmented", id: request.id, ...found });
   });
 };

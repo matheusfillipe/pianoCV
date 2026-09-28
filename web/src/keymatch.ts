@@ -1,5 +1,5 @@
-import * as ort from "onnxruntime-web/wasm";
 import type { RuntimeAssets } from "./assets";
+import { openModel } from "./gpu";
 import { applyHomography, findHomography, type Point } from "./homography";
 import {
   fitLine,
@@ -58,6 +58,8 @@ export type Matched = {
 };
 
 export type KeyMatcher = {
+  /** Where the model runs: "webgpu", or "wasm" where the GPU could not start it. */
+  readonly backend: string;
   /** The keys the matcher sees on `quad`, once the quad is squared to the keys, or null when it
    * saw too little to stand in for the brightness rules. */
   readonly match: (
@@ -192,11 +194,7 @@ export async function createKeyMatcher(
   assets: RuntimeAssets,
   url: string = KEYMATCH_URL,
 ): Promise<KeyMatcher> {
-  ort.env.wasm.wasmPaths = { wasm: assets.ortWasm };
-  const session = await ort.InferenceSession.create(url, {
-    executionProviders: ["wasm"],
-    graphOptimizationLevel: "all",
-  });
+  const model = await openModel(assets, url);
   const input = new Float32Array(3 * MATCH_HEIGHT * MATCH_WIDTH);
   const plane = MATCH_HEIGHT * MATCH_WIDTH;
   const scale = STRIP_WIDTH / MATCH_WIDTH;
@@ -214,16 +212,7 @@ export async function createKeyMatcher(
         input[c * plane + i] = (strip.data[i * 4 + c] / 255 - MEAN[c]) / STD[c];
       }
     }
-    const outputs = await session.run({
-      [session.inputNames[0]]: new ort.Tensor("float32", input, [
-        1,
-        3,
-        MATCH_HEIGHT,
-        MATCH_WIDTH,
-      ]),
-    });
-    const heat = outputs[session.outputNames[0]]?.data;
-    return heat instanceof Float32Array ? heat : null;
+    return model.run(input, [1, 3, MATCH_HEIGHT, MATCH_WIDTH]);
   };
   const channel = (heat: Float32Array, c: number): number[] =>
     peaks(heat.subarray(c * MATCH_WIDTH, (c + 1) * MATCH_WIDTH)).map(
@@ -285,6 +274,7 @@ export async function createKeyMatcher(
   };
 
   return {
+    backend: model.backend,
     match: async (source, quad) => {
       let outline: readonly Point[] = quad;
       for (let round = 0; round < MOST_ROUNDS; round += 1) {

@@ -200,9 +200,6 @@ export function createLab(options: LabOptions): void {
       recorder.stop();
       return;
     }
-    if (!guard()) {
-      return;
-    }
     const mimeType = pickMimeType();
     const next = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
     const chunks: Blob[] = [];
@@ -214,6 +211,7 @@ export function createLab(options: LabOptions): void {
     startedAt = Date.now();
     next.onstop = () => {
       const durationMs = Date.now() - startedAt;
+      const corners = getCorners();
       const blob = new Blob(chunks, { type: next.mimeType });
       recorder = null;
       styleButton(bar.rec);
@@ -225,7 +223,7 @@ export function createLab(options: LabOptions): void {
           kind: "rec",
           startedAt,
           durationMs,
-          corners: getCorners(),
+          corners: corners && checkQuad(corners).usable ? corners : null,
           imageWidth: video.videoWidth,
           imageHeight: video.videoHeight,
           mimeType: next.mimeType,

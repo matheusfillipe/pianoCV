@@ -59,10 +59,11 @@ export declare function simplify(points: readonly Point[], tolerance: number): P
 export declare function rowsOutline(rows: Rows): Point[];
 /** The convex hull of `points`, by the monotone chain. */
 export declare function convexHull(points: readonly Point[]): Point[];
-/** Each template key takes the outline of the segmented key of its colour whose centre falls
+/** Each template key moves its corners onto the segmented key of its colour whose centre falls
  * inside it and whose size is close to its own, so keys follow the camera's real shapes where
- * the segmenter saw them and keep the template's shape where it did not. A region stands in for
- * one key at most. */
+ * the segmenter saw them and keep the template's straight edges and corner count everywhere. A
+ * corner further than its reach from the outline stays where the template put it. A region
+ * stands in for one key at most. */
 export declare function snapKeys<K extends {
     readonly black: boolean;
     readonly bar: readonly Point[];

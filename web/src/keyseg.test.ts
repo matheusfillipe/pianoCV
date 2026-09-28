@@ -5,6 +5,7 @@ import {
   cropFor,
   cropToFrame,
   keyOutline,
+  snapKeys,
 } from "./keyseg";
 
 describe("cropFor", () => {
@@ -55,5 +56,49 @@ describe("keyOutline", () => {
 
   it("finds nothing when there are too few key pixels", () => {
     expect(keyOutline(new Uint8Array(CROP_WIDTH * CROP_HEIGHT))).toBeNull();
+  });
+});
+
+describe("snapKeys", () => {
+  const key = {
+    black: false,
+    bar: [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 6 },
+      { x: 0, y: 6 },
+    ],
+  };
+  const region = (bar: { x: number; y: number }[]) => ({
+    black: false,
+    bar,
+    centre: { x: 0.5, y: 3 },
+    area: 6,
+  });
+
+  it("moves each corner onto the segmented outline and keeps the corner count", () => {
+    const wobbly = region([
+      { x: 0.1, y: 0.1 },
+      { x: 0.5, y: 0.15 },
+      { x: 1.1, y: 0 },
+      { x: 1.05, y: 3 },
+      { x: 1, y: 6.1 },
+      { x: 0, y: 6 },
+      { x: -0.05, y: 3 },
+    ]);
+    const [snapped] = snapKeys([key], [wobbly]);
+    expect(snapped.bar).toHaveLength(4);
+    expect(snapped.bar[0]).toEqual({ x: 0.1, y: 0.1 });
+  });
+
+  it("keeps a corner the outline does not reach", () => {
+    const short = region([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 4 },
+      { x: 0, y: 4 },
+    ]);
+    const [snapped] = snapKeys([key], [short]);
+    expect(snapped.bar[2]).toEqual({ x: 1, y: 6 });
   });
 });

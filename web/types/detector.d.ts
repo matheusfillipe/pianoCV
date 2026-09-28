@@ -39,4 +39,6 @@ export interface Detector {
     reset(): void;
 }
 export declare function grayscale(data: Uint8ClampedArray, out: Float32Array, scale?: number): void;
-export declare function createDetector(assets: RuntimeAssets, url?: string): Promise<Detector>;
+export declare function createDetector(assets: RuntimeAssets, url?: string): Promise<Detector & {
+    readonly backend: string;
+}>;

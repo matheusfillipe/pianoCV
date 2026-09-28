@@ -79,6 +79,9 @@ const MANUAL_COLOR = "rgba(56,189,248,0.9)";
 const AUTO_COLOR = "#4ade80";
 const MODEL_VIEW_PX = 216;
 const TRUSTED_BOARD_CONFIDENCE = 0.5;
+const OUTLINE_EASE = 0.3;
+// a corner moving this far in one read is the keyboard moving, so we follow it at once
+const OUTLINE_JUMP = 0.04;
 const DEPTH_KEY = "pianocv.keybedDepthUnits.v2";
 const FOCAL_KEY = "pianocv.cameraFocalFraction.v2";
 
@@ -188,6 +191,25 @@ type DrawnKey = {
   readonly bar: readonly Point[];
 };
 
+function easedOutline(
+  previous: readonly Point[] | null,
+  next: readonly Point[] | null,
+): Point[] | null {
+  if (next === null || previous === null || previous.length !== next.length) {
+    return next === null ? null : [...next];
+  }
+  const jumped = next.some(
+    (p, i) =>
+      Math.hypot(p.x - previous[i].x, p.y - previous[i].y) > OUTLINE_JUMP,
+  );
+  return jumped
+    ? [...next]
+    : next.map((p, i) => ({
+        x: previous[i].x + (p.x - previous[i].x) * OUTLINE_EASE,
+        y: previous[i].y + (p.y - previous[i].y) * OUTLINE_EASE,
+      }));
+}
+
 function oneFacePerKey(faces: readonly DetectedKey[]): DrawnKey[] {
   const keys: DrawnKey[] = [];
   for (let i = 0; i < faces.length; i += 1) {
@@ -283,6 +305,7 @@ function startLoop(
   // drawn on so they follow the real keyboard every frame
   let liveOutline: Point[] | null = null;
   let liveRegions: readonly KeyRegion[] = [];
+  let shownBars = new Map<string, Point[]>();
   let segmenting = false;
 
   hud.onRedetect(() => tracker?.release());
@@ -356,6 +379,7 @@ function startLoop(
         keyReader.moved(now);
         liveOutline = null;
         liveRegions = [];
+        shownBars = new Map();
       }
       const space = keybedSpace({ quad: state.quad }, size);
       if (space) {
@@ -415,12 +439,12 @@ function startLoop(
         segmenting = true;
         const heldAt = state;
         void keySegmenter
-          .segment(video, size, liveOutline ?? followed)
+          .segment(video, size, followed)
           .catch(() => null)
           .then((found) => {
             segmenting = false;
             if (boardHeld === heldAt) {
-              liveOutline = found?.outline ?? null;
+              liveOutline = easedOutline(liveOutline, found?.outline ?? null);
               liveRegions = found?.regions ?? [];
             }
             window.pianocvLiveKeys = {
@@ -441,7 +465,12 @@ function startLoop(
             : projectKeyFaces(trusted, followed, size)
           : [];
       const keys = liveOutline
-        ? snapKeys(oneFacePerKey(faces), liveRegions)
+        ? snapKeys(oneFacePerKey(faces), liveRegions).map((key) => {
+            const id = `${key.semitone}`;
+            const bar = easedOutline(shownBars.get(id) ?? null, key.bar) ?? [];
+            shownBars.set(id, bar);
+            return { ...key, bar };
+          })
         : faces;
       if (hud.state.keys) {
         drawKeys(ctx, keys, box.w, box.h);
@@ -529,7 +558,7 @@ async function boot(): Promise<void> {
     hud.status("model", "loading");
     const loading = createDetector(viteAssets, modelUrl(MODEL_URL)).then(
       (detector) => {
-        hud.status("model", "ready");
+        hud.status("model", `ready on ${detector.backend}`);
         return detector;
       },
       (err: unknown) => {
@@ -552,7 +581,7 @@ async function boot(): Promise<void> {
       modelUrl(KEYMATCH_URL),
     ).then(
       (matcher) => {
-        hud.status("keys", "matcher ready");
+        hud.status("keys", `matcher ready on ${matcher.backend}`);
         return matcher;
       },
       () => {

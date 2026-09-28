@@ -1,6 +1,6 @@
 import type { RuntimeAssets } from "./assets";
+import { openModel } from "./gpu";
 import type { Point } from "./homography";
-import type { SegmentReply, SegmentRequest } from "./keyseg-worker";
 import type { Size } from "./keyspace";
 import {
   fitLine,
@@ -408,10 +408,49 @@ export function convexHull(points: readonly Point[]): Point[] {
 const SNAP_LEAST_AREA = 0.45;
 const SNAP_MOST_AREA = 1.6;
 
-/** Each template key takes the outline of the segmented key of its colour whose centre falls
+/** How far a template corner may move onto the segmented outline, as a share of the key's width. */
+const SNAP_REACH = 0.4;
+
+function nearestOnOutline(p: Point, outline: readonly Point[]): Point {
+  let best = p;
+  let bestDistance = Infinity;
+  outline.forEach((a, i) => {
+    const b = outline[(i + 1) % outline.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length = dx * dx + dy * dy;
+    const t =
+      length === 0
+        ? 0
+        : Math.max(
+            0,
+            Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length),
+          );
+    const q = { x: a.x + dx * t, y: a.y + dy * t };
+    const distance = Math.hypot(q.x - p.x, q.y - p.y);
+    if (distance < bestDistance) {
+      best = q;
+      bestDistance = distance;
+    }
+  });
+  return best;
+}
+
+function keyWidth(bar: readonly Point[]): number {
+  const longest = Math.max(
+    ...bar.map((a, i) => {
+      const b = bar[(i + 1) % bar.length];
+      return Math.hypot(b.x - a.x, b.y - a.y);
+    }),
+  );
+  return longest === 0 ? 0 : polygonArea(bar) / longest;
+}
+
+/** Each template key moves its corners onto the segmented key of its colour whose centre falls
  * inside it and whose size is close to its own, so keys follow the camera's real shapes where
- * the segmenter saw them and keep the template's shape where it did not. A region stands in for
- * one key at most. */
+ * the segmenter saw them and keep the template's straight edges and corner count everywhere. A
+ * corner further than its reach from the outline stays where the template put it. A region
+ * stands in for one key at most. */
 export function snapKeys<
   K extends { readonly black: boolean; readonly bar: readonly Point[] },
 >(keys: readonly K[], regions: readonly KeyRegion[]): K[] {
@@ -430,7 +469,12 @@ export function snapKeys<
       return key;
     }
     used.add(match);
-    return { ...key, bar: match.bar };
+    const reach = SNAP_REACH * keyWidth(key.bar);
+    const pulled = key.bar.map((p) => {
+      const q = nearestOnOutline(p, match.bar);
+      return Math.hypot(q.x - p.x, q.y - p.y) <= reach ? q : p;
+    });
+    return { ...key, bar: key.black ? convexHull(pulled) : pulled };
   });
 }
 
@@ -461,39 +505,10 @@ export async function createKeySegmenter(
   assets: RuntimeAssets,
   url: string = KEYSEG_URL,
 ): Promise<KeySegmenter> {
-  const worker = new Worker(new URL("./keyseg-worker.ts", import.meta.url), {
-    type: "module",
-  });
-  const pending = new Map<
-    number,
-    (reply: Extract<SegmentReply, { kind: "segmented" }>) => void
-  >();
-  let nextId = 0;
-  const ready = new Promise<{
-    readonly backend: string;
-    readonly gpuFailure: string | null;
-  }>((resolve, reject) => {
-    worker.onmessage = (event: MessageEvent<SegmentReply>) => {
-      const reply = event.data;
-      if (reply.kind === "ready") {
-        resolve(reply);
-      } else if (reply.kind === "failed") {
-        reject(new Error(reply.reason));
-      } else {
-        pending.get(reply.id)?.(reply);
-        pending.delete(reply.id);
-      }
-    };
-  });
-  worker.postMessage({
-    kind: "init",
-    url: new URL(url, location.href).href,
-    wasm: new URL(assets.ortGpuWasm, location.href).href,
-  } satisfies SegmentRequest);
-  const { backend, gpuFailure } = await ready;
+  const model = await openModel(assets, url);
   return {
-    backend,
-    gpuFailure,
+    backend: model.backend,
+    gpuFailure: model.gpuFailure,
     segment: async (frame, size, quad) => {
       if (quad.length < 4 || size.width === 0 || size.height === 0) {
         return { outline: null, regions: [] };
@@ -512,17 +527,13 @@ export async function createKeySegmenter(
             )
           : frame,
       );
-      nextId += 1;
-      const id = nextId;
-      const reply = await new Promise<
-        Extract<SegmentReply, { kind: "segmented" }>
-      >((resolve) => {
-        pending.set(id, resolve);
-        worker.postMessage(
-          { kind: "segment", id, frame: bitmap, crop } satisfies SegmentRequest,
-          [bitmap],
-        );
-      });
+      const reply = await model.worker.ask(
+        { kind: "segment", url: model.url, frame: bitmap, crop },
+        [bitmap],
+      );
+      if (reply.kind !== "segmented") {
+        return { outline: null, regions: [] };
+      }
       const fraction = (p: Point): Point => ({
         x: p.x / size.width,
         y: p.y / size.height,

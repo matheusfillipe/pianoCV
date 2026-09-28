@@ -40,6 +40,10 @@ returns:
 - [`keymatch.onnx`](https://huggingface.co/mattf/pianoCV/resolve/main/keymatch.onnx), which
   reads the edges of the keys
 
+The two segmentation models are small [U-Nets](https://arxiv.org/abs/1505.04597) on a
+[MobileNetV3-Small](https://arxiv.org/abs/1905.02244) backbone pretrained on ImageNet, which is
+what keeps them fast enough to run every frame. The edge reader is a tiny 1D network.
+
 They are plain [ONNX](https://onnx.ai) files, so you can use them from any language with
 [ONNX Runtime](https://onnxruntime.ai).
 

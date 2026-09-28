@@ -1,6 +1,6 @@
-import * as ort from "onnxruntime-web/wasm";
 import type { RuntimeAssets } from "./assets";
 import { quadFromMask } from "./fitquad";
+import { openModel } from "./gpu";
 import type { Point } from "./homography";
 import { cameraFocalFraction } from "./pose";
 import {
@@ -38,9 +38,6 @@ export const MASK_THRESHOLD = 0.5;
 // edges are refined on an unsquashed frame so each edge normal is really perpendicular,
 // capped at the width the 10 px search radius was measured on
 const REFINE_WIDTH = 640;
-// COEP would be needed for ORT threads and would also block the cross-origin hand landmarker
-// model, so the wasm build stays single threaded and the work goes to the GPU instead
-const THREADS = 1;
 // when nothing in the frame moves, the mask is averaged over this many detections before it
 // is fitted: measured on static clips it cuts corner jitter 5-12x and jumps 19 -> 4
 const ACCUMULATE = 8;
@@ -152,13 +149,6 @@ function planarRgb(
   }
 }
 
-function floats(value: ort.Tensor | undefined, name: string): Float32Array {
-  if (!value || !(value.data instanceof Float32Array)) {
-    throw new Error(`model output ${name} is not a float tensor`);
-  }
-  return value.data;
-}
-
 // mean mask probability over the grid cells whose centres lie inside the quad
 function meanInside(
   probability: Float32Array,
@@ -200,18 +190,8 @@ function meanInside(
 export async function createDetector(
   assets: RuntimeAssets,
   url: string = MODEL_URL,
-): Promise<Detector> {
-  ort.env.wasm.wasmPaths = { wasm: assets.ortWasm };
-  ort.env.wasm.numThreads = THREADS;
-  // The wasm backend, measured against the alternative: onnxruntime's WebGPU
-  // build fails to start at all on a machine whose adapter it dislikes, and a
-  // failed start leaves the wasm backend unable to start either, so the whole
-  // detector goes with it. The model runs here and the picture is polled rarely
-  // instead.
-  const session = await ort.InferenceSession.create(url, {
-    executionProviders: ["wasm"],
-    graphOptimizationLevel: "all",
-  });
+): Promise<Detector & { readonly backend: string }> {
+  const model = await openModel(assets, url);
 
   const canvas = document.createElement("canvas");
   canvas.width = INPUT_SIZE;
@@ -329,6 +309,7 @@ export async function createDetector(
   };
 
   return {
+    backend: model.backend,
     reset: () => {
       previousFit = null;
       havePrevious = false;
@@ -356,10 +337,10 @@ export async function createDetector(
       grayscale(pixels, gray);
       planarRgb(pixels, rgb, INPUT_SIZE);
       const started = performance.now();
-      const outputs = await session.run({
-        image: new ort.Tensor("float32", rgb, [1, 3, INPUT_SIZE, INPUT_SIZE]),
-      });
-      const single = floats(outputs.mask, "mask");
+      const single = await model.run(rgb, [1, 3, INPUT_SIZE, INPUT_SIZE]);
+      if (single === null) {
+        throw new Error("the keybed model gave no mask");
+      }
       const change = motion();
       const still = change <= STILL_BELOW;
       if (!still) {
