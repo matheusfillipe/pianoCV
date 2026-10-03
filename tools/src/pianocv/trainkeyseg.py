@@ -42,7 +42,7 @@ from pianocv.keyseg import (
     preprocess_crop,
     refine_by_brightness,
 )
-from pianocv.trainkeymatch import _augment_strip
+from pianocv.trainkeymatch import _augment_strip, _require_corners
 
 try:
     import mlflow
@@ -76,7 +76,7 @@ def _sample(
     image = cv2.imread(str(frame.image_path))
     if image is None:
         raise FileNotFoundError(f"cannot read frame {frame.image_path}")
-    crop = crop_for(perturb_quad(frame.corners_px, rng, config))
+    crop = crop_for(perturb_quad(_require_corners(frame), rng, config))
     pixels = crop_image(image, crop)
     labels = label_map(frame, crop)
     if frame.real:

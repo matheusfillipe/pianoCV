@@ -48,6 +48,15 @@ _DEFAULT_LR = 3e-4
 _DEFAULT_SEED = 0
 _DEFAULT_STEPS_PER_EPOCH = 100
 _VAL_FRACTION = 0.1
+
+
+def _require_corners(frame: SynthKeysFrame) -> np.ndarray:
+    # data/synth-keys carries positives only, but the type is shared with negatives now
+    if frame.corners_px is None:
+        raise ValueError(f"frame {frame.image_path} has no keybed corners")
+    return frame.corners_px
+
+
 _VAL_SEED = 12345
 _CHANNEL_NAMES = ("white", "black_left", "black_right")
 
@@ -165,7 +174,7 @@ class KeyMatchDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         image = cv2.imread(str(frame.image_path))
         if image is None:
             raise FileNotFoundError(f"cannot read frame {frame.image_path}")
-        quad = perturb_quad(frame.corners_px, rng, self.config)
+        quad = perturb_quad(_require_corners(frame), rng, self.config)
         strip = rectify_strip(image, quad)
         if self.augment:
             strip = _augment_strip(strip, rng)
@@ -189,7 +198,7 @@ def _build_validation_samples(
         image = cv2.imread(str(frame.image_path))
         if image is None:
             raise FileNotFoundError(f"cannot read frame {frame.image_path}")
-        quad = perturb_quad(frame.corners_px, rng, config)
+        quad = perturb_quad(_require_corners(frame), rng, config)
         strip = rectify_strip(image, quad)
         targets = compute_targets(frame, quad)
         samples.append(

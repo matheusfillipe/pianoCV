@@ -43,7 +43,8 @@ class SidecarKey:
 @dataclass(frozen=True)
 class SynthKeysFrame:
     image_path: Path
-    corners_px: np.ndarray
+    # None for a negative: no keyboard in view, "keys" is empty too
+    corners_px: np.ndarray | None
     keys: list[SidecarKey]
     image_size: tuple[int, int]
     # white where something covers the keys, as a hand does on a real frame, which training
@@ -51,6 +52,9 @@ class SynthKeysFrame:
     ignore_mask: Path | None = None
     # labelled by the app from its own fit on a real recording, rather than rendered
     real: bool = False
+    # a synth-motion clip id and its frame's position in it, when the sidecar carries them
+    sequence: str | None = None
+    frame_index: int | None = None
 
 
 def _parse_face(raw: object, scale: np.ndarray, what: str) -> np.ndarray:
@@ -91,17 +95,27 @@ def parse_synth_keys_sidecar(sidecar_path: Path) -> SynthKeysFrame:
         raise ValueError(f"sidecar {sidecar_path} has invalid image dimensions")
     if not isinstance(keys, list):
         raise ValueError(f"sidecar {sidecar_path} must list keys")
+    if corners is None and keys:
+        raise ValueError(f"sidecar {sidecar_path} has keys but no corners")
     ignore_mask = data.get("ignoreMask")
     if ignore_mask is not None and not isinstance(ignore_mask, str):
         raise ValueError(f"sidecar {sidecar_path} ignoreMask must name a file")
+    sequence = data.get("sequence")
+    if sequence is not None and not isinstance(sequence, str):
+        raise ValueError(f"sidecar {sidecar_path} sequence must be a string")
+    frame_index = data.get("frameIndex")
+    if frame_index is not None and not isinstance(frame_index, int):
+        raise ValueError(f"sidecar {sidecar_path} frameIndex must be an int")
     scale = np.array([float(width), float(height)])
     return SynthKeysFrame(
         image_path=sidecar_path.with_suffix(".png"),
-        corners_px=_parse_face(corners, scale, "keybed quad"),
+        corners_px=None if corners is None else _parse_face(corners, scale, "keybed quad"),
         keys=[_parse_key(key, scale) for key in keys],
         image_size=(width, height),
         ignore_mask=None if ignore_mask is None else sidecar_path.parent / ignore_mask,
         real=data.get("kind") == "real-keys",
+        sequence=sequence,
+        frame_index=frame_index,
     )
 
 

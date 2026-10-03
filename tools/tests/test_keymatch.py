@@ -132,6 +132,7 @@ def test_targets_cut_off_by_a_cropped_quad_produce_no_peaks() -> None:
 
 def test_load_synth_keys_round_trips_a_sidecar(tmp_path: Path) -> None:
     frame = _three_white_two_black_frame()
+    assert frame.corners_px is not None
     width, height = 640, 480
     scale = np.array([float(width), float(height)])
 
@@ -159,6 +160,7 @@ def test_load_synth_keys_round_trips_a_sidecar(tmp_path: Path) -> None:
     loaded = load_synth_keys(tmp_path)
 
     assert len(loaded) == 1
+    assert loaded[0].corners_px is not None
     assert np.allclose(loaded[0].corners_px, frame.corners_px, atol=1e-3)
     assert sorted(key.pitch for key in loaded[0].keys) == sorted(key.pitch for key in frame.keys)
 

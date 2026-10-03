@@ -5,7 +5,6 @@ shape the camera gives them and the model is free to find them anywhere in it; t
 where to look, never what shape a key has.
 """
 
-from dataclasses import dataclass
 from itertools import pairwise
 
 import cv2
@@ -16,7 +15,8 @@ from onnx import numpy_helper
 from torch import nn
 from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small
 
-from pianocv.keymatch import SidecarKey, SynthKeysFrame, quad_axes
+from pianocv.keymatch import SidecarKey, SynthKeysFrame
+from pianocv.keynet import Crop, oriented_crop
 from pianocv.segnet2 import normalise
 
 CROP_WIDTH = 1024
@@ -42,41 +42,18 @@ _SKIP_CHANNELS = (16, 24, 48, 576)
 _DECODER_CHANNELS = (96, 48, 24, 16, 16)
 
 
-@dataclass(frozen=True)
-class Crop:
-    """The affine that takes frame pixels to crop pixels."""
-
-    to_crop: np.ndarray
-
-    def points(self, frame_px: np.ndarray) -> np.ndarray:
-        ones = np.ones((len(frame_px), 1))
-        return np.asarray(np.hstack([frame_px, ones]) @ self.to_crop.T, dtype=np.float64)
-
-
 def crop_for(quad_px: np.ndarray) -> Crop:
     """An oriented crop with the keys running left to right and the player's edge at the bottom.
 
     Scale is chosen so both the quad's length and its depth fit with their margins, the same
     way the browser runtime crops, which is what lets the model run on a live frame.
     """
-    key_axis, depth_axis = quad_axes(quad_px)
-    across = np.array([-key_axis[1], key_axis[0]])
-    if float(across @ depth_axis) < 0:
-        across = -across
-    centre = quad_px.mean(axis=0)
-    along_extent = np.ptp((quad_px - centre) @ key_axis) * (1 + 2 * CROP_MARGIN_ALONG)
-    across_extent = np.ptp((quad_px - centre) @ across) + along_extent * CROP_MARGIN_ACROSS / (
-        1 + 2 * CROP_MARGIN_ALONG
-    )
-    scale = max(along_extent / CROP_WIDTH, across_extent / CROP_HEIGHT, 1e-6)
-    rows = np.stack([key_axis / scale, across / scale])
-    offset = np.array([CROP_WIDTH / 2, CROP_HEIGHT / 2]) - rows @ centre
-    return Crop(to_crop=np.hstack([rows, offset[:, None]]))
+    return oriented_crop(quad_px, CROP_WIDTH, CROP_HEIGHT, CROP_MARGIN_ALONG, CROP_MARGIN_ACROSS)
 
 
 def crop_image(image_bgr: np.ndarray, crop: Crop) -> np.ndarray:
     warped = cv2.warpAffine(
-        image_bgr, crop.to_crop, (CROP_WIDTH, CROP_HEIGHT), flags=cv2.INTER_LINEAR
+        image_bgr, crop.to_crop[:2], (CROP_WIDTH, CROP_HEIGHT), flags=cv2.INTER_LINEAR
     )
     return np.asarray(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB), dtype=np.uint8)
 
@@ -120,11 +97,11 @@ def label_map(frame: SynthKeysFrame, crop: Crop) -> np.ndarray:
         if covered is None:
             raise FileNotFoundError(f"cannot read ignore mask {frame.ignore_mask}")
         covered = cv2.dilate(covered, np.ones((IGNORE_GROWTH_PX, IGNORE_GROWTH_PX), np.uint8))
-        warped = cv2.warpAffine(covered, crop.to_crop, (CROP_WIDTH, CROP_HEIGHT))
+        warped = cv2.warpAffine(covered, crop.to_crop[:2], (CROP_WIDTH, CROP_HEIGHT))
         labels[warped > 127] = IGNORE
     width, height = frame.image_size
     inside = cv2.warpAffine(
-        np.ones((height, width), dtype=np.uint8), crop.to_crop, (CROP_WIDTH, CROP_HEIGHT)
+        np.ones((height, width), dtype=np.uint8), crop.to_crop[:2], (CROP_WIDTH, CROP_HEIGHT)
     )
     labels[inside == 0] = IGNORE
     return labels

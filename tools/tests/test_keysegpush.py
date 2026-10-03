@@ -62,3 +62,30 @@ def test_push_refuses_a_version_already_there(
     monkeypatch.setattr("pianocv.keysegpush._destination_taken", lambda *a, **k: True)
     with pytest.raises(FileExistsError, match="already has a bundle"):
         push_keyseg(tmp_path, tmp_path, tmp_path, "taken", alias="store")
+
+
+def test_bundle_packs_the_corrected_labels_when_the_directory_exists(tmp_path: Path) -> None:
+    real_dir, init_onnx, pianocv_dir = _sources(tmp_path)
+    fixed_dir = tmp_path / "real-keys-fixed"
+    _write(fixed_dir / "a.json", "{}")
+    tar_path = build_keyseg_bundle(
+        real_dir, init_onnx, pianocv_dir, tmp_path / "bundle.tar", fixed_dir=fixed_dir
+    )
+    with tarfile.open(tar_path) as archive:
+        assert "real-keys-fixed/a.json" in archive.getnames()
+    absent = build_keyseg_bundle(
+        real_dir, init_onnx, pianocv_dir, tmp_path / "b.tar", fixed_dir=tmp_path / "none"
+    )
+    with tarfile.open(absent) as archive:
+        assert not any(name.startswith("real-keys-fixed") for name in archive.getnames())
+
+
+def test_bundle_packs_rendered_camera_paths_when_given(tmp_path: Path) -> None:
+    real_dir, init_onnx, pianocv_dir = _sources(tmp_path)
+    motion_dir = tmp_path / "synth-motion"
+    _write(motion_dir / "motion-a-000.json", "{}")
+    tar_path = build_keyseg_bundle(
+        real_dir, init_onnx, pianocv_dir, tmp_path / "bundle.tar", motion_dir
+    )
+    with tarfile.open(tar_path) as archive:
+        assert "synth-motion/motion-a-000.json" in archive.getnames()

@@ -48,3 +48,8 @@ web/public/*.onnx.data
 
 # workflows for a private training cluster, local only
 tools/argo/
+.claude/worktrees/
+
+# rust
+core/target/
+web/src/keycore-wasm/
