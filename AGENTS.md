@@ -2,6 +2,11 @@
 
 Spike: automatic video editing for piano video. A camera watches hands on a real keyboard; the browser pipeline detects the keybed, solves its 3D plane, and composites kinesthesia's MIDI-driven visuals into the original camera perspective. CV does geometry only, never notes. The runtime is browser-only (web/). Python (tools/) is the offline lab. Eventual home: kinesthesia.
 
+## Direction
+- One portable keypoint model (KeyNet, ONNX) does the perception, so the same model runs real-time AR on mobile, desktop and the web.
+- The code around the model is plain geometry only: decode peaks, fit the keyboard template, track, draw. It stays small enough to port to every platform.
+- When the drawing is wrong, we fix the model or its labels. We never add computer vision heuristics to the runtime.
+
 ## Where things live
 - web/ TS browser app (Vite + MediaPipe tasks-vision): the runtime
 - tools/ python uv package pianocv: offline lab (synthetic data, frame validation, detector training)

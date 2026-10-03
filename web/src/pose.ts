@@ -21,6 +21,10 @@ export interface Vector3 {
 
 export interface PlanePose {
   focal: number;
+  /** Millimetres per white-key width across the keys' depth, relative to along them: 1 when
+   * the pose took the keybed's depth as given, the measured ratio when it read the depth off
+   * the picture. */
+  depthScale: number;
   rotation: number[][];
   translation: number[];
   worldWidthMm: number;
@@ -211,6 +215,7 @@ export function solvePose(
   const cameraBelow = r3[0] * b[0][2] + r3[1] * b[1][2] + r3[2] * b[2][2] > 0;
   return {
     focal,
+    depthScale: 1,
     rotation: [
       [r1[0], r2[0], r3[0]],
       [r1[1], r2[1], r3[1]],
@@ -239,7 +244,7 @@ export function projectSpace(
   height: number,
 ): Point {
   const xmm = u * WHITE_KEY_MM;
-  const ymm = v * WHITE_KEY_MM;
+  const ymm = v * WHITE_KEY_MM * pose.depthScale;
   const zmm = pose.up * w * WHITE_KEY_MM;
   const r = pose.rotation;
   const t = pose.translation;
@@ -273,7 +278,7 @@ export function spaceDepth(
   const r = pose.rotation;
   return (
     (r[2][0] * u * WHITE_KEY_MM +
-      r[2][1] * v * WHITE_KEY_MM +
+      r[2][1] * v * WHITE_KEY_MM * pose.depthScale +
       r[2][2] * pose.up * w * WHITE_KEY_MM +
       pose.translation[2]) /
     WHITE_KEY_MM
@@ -287,5 +292,5 @@ export function cameraPosition(pose: PlanePose): Vector3 {
   const t = pose.translation;
   const at = (col: number): number =>
     -(r[0][col] * t[0] + r[1][col] * t[1] + r[2][col] * t[2]) / WHITE_KEY_MM;
-  return { u: at(0), v: at(1), w: pose.up * at(2) };
+  return { u: at(0), v: at(1) / pose.depthScale, w: pose.up * at(2) };
 }

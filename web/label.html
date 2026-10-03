@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>label correction</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #050505;
+        overflow: hidden;
+        color: #ddd;
+        font: 13px monospace;
+      }
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+      #status,
+      #legend {
+        position: fixed;
+        left: 8px;
+        padding: 4px 8px;
+        background: rgba(0, 0, 0, 0.75);
+      }
+      #status {
+        bottom: 8px;
+      }
+      #legend {
+        top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="legend"></div>
+    <div id="status"></div>
+    <script type="module" src="/src/label.ts"></script>
+  </body>
+</html>

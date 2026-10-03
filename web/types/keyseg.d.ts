@@ -28,9 +28,11 @@ export type KeySegmenter = {
     /** The keybed outline and the keys the segmenter sees around `quad`. */
     readonly segment: (frame: CanvasImageSource | SourceImage, size: Size, quad: readonly Point[]) => Promise<Segmented>;
 };
-/** The crop around `quad`, given in frame pixels, the same one the model was trained on. */
-export declare function cropFor(quad: readonly Point[]): Crop;
-export declare function cropToFrame(crop: Crop, x: number, y: number): Point;
+/** The crop around `quad`, given in frame pixels, the same one the model was trained on. `width`
+ * and `height` default to keyseg's own crop size; KeyNet's track mode passes its own, smaller
+ * crop, at the same margins. */
+export declare function cropFor(quad: readonly Point[], width?: number, height?: number): Crop;
+export declare function cropToFrame(crop: Crop, x: number, y: number, width?: number, height?: number): Point;
 /** Each pixel's most likely class, row by row. */
 export declare function classesOf(probabilities: Float32Array): Uint8Array;
 /** The keybed outline the key pixels show, in crop pixels, as far-left, far-right, near-right,

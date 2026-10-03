@@ -7,12 +7,13 @@ PORT ?= 5274
 .DEFAULT_GOAL := help
 .PHONY: help install fix precommit check list-lab-data lab-extract lab-train lab-detect \
         lab-seg2-kaggle-run lab-seg2-kaggle-output lab-browser-gridtest lab-keys-eval \
-        lab-synth-generate \
+        lab-synth-generate lab-synth-motion \
         tools-fix tools-format-check tools-lint tools-typecheck \
-        tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit \
+        tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit tools-upgrade \
         build web-typecheck web-lint web-fix web-test web-build dev dev-alt model site publish-models clean lab-export \
         lab-evaluate lab-real-seg2-prepare lab-relabel-keys lab-compare lab-trainseg2 lab-dataset-push \
-        lab-keymatch-train lab-keymatch-push lab-keyseg-train lab-keyseg-labels lab-keyseg-push
+        lab-keymatch-train lab-keymatch-push lab-keyseg-train lab-keyseg-labels lab-keyseg-push lab-keynet-push lab-keynet-train lab-keynet-eval lab-synth-test \
+        core-lint core-test core-wasm
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -30,7 +31,7 @@ precommit: fix ## hook entry: same as fix
 
 # --- checks (verify, never produce artifacts) ---
 
-check: tools-format-check tools-lint tools-typecheck tools-test web-typecheck web-types web-lint web-test web-build ## run all checks (the pre-commit gate)
+check: tools-format-check tools-lint tools-typecheck tools-test core-lint core-test web-typecheck web-types web-lint web-test web-build ## run all checks (the pre-commit gate)
 
 quality: check tools-dead-code tools-unused-deps tools-security tools-audit tools-coverage build ## run the full quality gate
 	@echo "quality gate passed"
@@ -65,10 +66,25 @@ tools-security: ## scan python for security issues (bandit)
 tools-audit: ## audit python dependencies for vulnerabilities (pip-audit)
 	cd tools && uv run --with pip pip-audit
 
+tools-upgrade: ## move the named python packages to their newest allowed versions: make tools-upgrade PKGS="urllib3 virtualenv"
+	cd tools && uv lock $(addprefix --upgrade-package ,$(PKGS)) && uv sync
+
+core-lint: ## check rust formatting and lint the keycore crate (rustfmt, clippy)
+	cd core && cargo fmt --check && cargo clippy --all-targets -- -D warnings
+
+core-fix: ## format the keycore crate (rustfmt)
+	cd core && cargo fmt
+
+core-test: ## run the keycore crate tests (cargo test)
+	cd core && cargo test
+
+core-wasm: ## build the keycore crate for the browser into web/src/keycore-wasm (wasm-pack)
+	cd core && wasm-pack build --target web --release --out-dir ../web/src/keycore-wasm --out-name keycore
+
 build: ## build the python package (uv build)
 	uv build --project tools
 
-web-typecheck: ## typecheck web (tsc)
+web-typecheck: core-wasm ## typecheck web (tsc)
 	$(BUN) run typecheck
 
 web-types: ## write the published type declarations (tsc)
@@ -80,7 +96,7 @@ web-lint: ## lint web (biome check)
 web-fix: ## autofix web formatting and lint (biome)
 	$(BUN) run fix
 
-web-test: ## run web tests (vitest)
+web-test: core-wasm ## run web tests (vitest)
 	$(BUN) run test
 
 web-build: ## bundle the web app (vite build)
@@ -145,6 +161,12 @@ lab-dump: ## render procedural frames to disk (data/procedural)
 lab-synth-generate: ## render synthetic keyboards with a randomised case into data/synth-case, unattended (PIANOCV_GEN_FRAMES, default 8000)
 	cd web && bun gen-runner.mjs
 
+lab-synth-motion: ## render moving-camera sequences with motion blur into data/synth-motion, unattended (PIANOCV_GEN_FRAMES, default 8000)
+	cd web && PIANOCV_GEN_MOTION=1 PIANOCV_GEN_OUT=synth-motion bun gen-runner.mjs
+
+lab-synth-test: ## render a held-out set of moving-camera frames with exact labels into data/synth-test, never trained on (PIANOCV_GEN_FRAMES, default 400)
+	cd web && PIANOCV_GEN_MOTION=1 PIANOCV_GEN_OUT=synth-test PIANOCV_GEN_FRAMES=$${PIANOCV_GEN_FRAMES:-400} bun gen-runner.mjs
+
 lab-export-seg2: ## export the pretrained segmentation detector to web/public/keybed_seg2.onnx
 	cd tools && uv run python -m pianocv.export --seg2 $(ARGS)
 
@@ -200,6 +222,15 @@ lab-keyseg-train: ## train the per-key segmenter locally on data/synth-keys; ARG
 
 lab-keyseg-push: ## pack data/real-keys, pianocv and the published keyseg.onnx for a fine-tune and upload them with mc (ARGS="--alias <mc alias> --version <v>")
 	cd tools && uv run python -m pianocv.keysegpush $(ARGS)
+
+lab-keynet-push: ## pack data/real-keys, data/synth-motion, pianocv and keyseg.onnx for a KeyNet run and upload them with mc (ARGS="--alias <mc alias> --version <v>")
+	cd tools && uv run python -m pianocv.keysegpush --name keynet --motion-dir ../data/synth-motion $(ARGS)
+
+lab-keynet-train: ## train KeyNet locally; ARGS="--still-dir ../data/synth-keys ..." (see --help)
+	cd tools && uv run python -m pianocv.trainkeynet $(ARGS)
+
+lab-keynet-eval: ## score KeyNet exports on held-out labelled frames, in key widths (ARGS="--model <onnx> --clips <recs> [--decoder parabola]")
+	cd tools && uv run python -m pianocv.evalkeynet --frames ../data/real-keys $(ARGS)
 
 lab-keymatch-push: ## pack data/synth-keys and pianocv into a bundle and upload it to an S3 bucket with mc (ARGS="--alias <mc alias> --version <v>")
 	cd tools && uv run python -m pianocv.keymatchpush $(ARGS)

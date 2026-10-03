@@ -86,7 +86,7 @@ const BLACK_END_MIN_KEYS = 5;
 /** Heights a black key's top may stand above the white keys, either way round since which side
  * of the plane the camera sits on depends on how the corners wind; the fit picks the one that
  * lets white and black evidence agree. */
-const RAISE_CANDIDATES_MM = [0, 4, 8, 12, 16];
+export const RAISE_CANDIDATES_MM = [0, 4, 8, 12, 16];
 /** How many keys a board may carry on past the strip's edge when white keys run right up to it:
  * the mask can stop short of the board's end, and keys past the strip are out of sight rather
  * than absent. */
@@ -346,11 +346,12 @@ export function projectKeyFaces(
   }
   const outlined = outlineQuad(quad, read.outline);
   const depth = keybedDepth();
+  const world = boardWorld(read.stripKeys, depth);
   const pose = solvePose(
     framePixels(outlined, frame),
     frame.width,
     frame.height,
-    boardWorld(read.stripKeys, depth),
+    world,
   );
   const raise = read.blackRaiseMm / WHITE_KEY_MM;
   const pinned = (p: Point): Point => ({

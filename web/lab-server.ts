@@ -4,19 +4,32 @@ import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 
 const ROUTE =
-  /^\/lab\/save\/(?:(synth|synth-case|synth-keys|grid|evaluations)\/)?([^/]+)$/;
-const LIST_ROUTE = /^\/lab\/list\/(grid|synth|synth-case|synth-keys)$/;
+  /^\/lab\/save\/(?:(synth|synth-case|synth-keys|synth-motion|synth-test|real-keys-fixed|grid|evaluations)\/)?([^/]+)$/;
+const LIST_ROUTE =
+  /^\/lab\/list\/(grid|synth|synth-case|synth-keys|synth-motion|real-keys|real-keys-fixed)$/;
 const DATA_ROUTE =
-  /^\/lab\/data\/(grid|synth|synth-case|synth-keys)\/([^/?]+)$/;
+  /^\/lab\/data\/(grid|synth|synth-case|synth-keys|synth-motion|real-keys|real-keys-fixed|evaluations|models)\/([^/?]+)$/;
 const CLIP_ROUTE = /^\/lab\/clip\/([^/?]+)$/;
 const DIRS: Record<string, string> = {
   recordings: "recordings",
   synth: "synth",
   "synth-case": "synth-case",
   "synth-keys": "synth-keys",
+  "synth-motion": "synth-motion",
+  "synth-test": "synth-test",
+  "real-keys": "real-keys",
+  "real-keys-fixed": "real-keys-fixed",
+  models: "models",
   grid: "grid",
   evaluations: "evaluations",
 };
+
+function contentType(name: string): string {
+  if (name.endsWith(".json")) {
+    return "application/json";
+  }
+  return name.endsWith(".onnx") ? "application/octet-stream" : "image/png";
+}
 const UNSAFE_NAME = /[^a-zA-Z0-9._-]/g;
 
 export function labServer(): Plugin {
@@ -49,10 +62,7 @@ export function labServer(): Plugin {
           const name = data[2].replace(UNSAFE_NAME, "");
           readFile(join(dataDir, DIRS[data[1]], name))
             .then((body) => {
-              res.setHeader(
-                "content-type",
-                name.endsWith(".json") ? "application/json" : "image/png",
-              );
+              res.setHeader("content-type", contentType(name));
               res.end(body);
             })
             .catch(() => {

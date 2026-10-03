@@ -17,7 +17,10 @@ import { createFollower } from "./follow";
 import { createHandTracker, type HandTracker } from "./hands";
 import type { Point } from "./homography";
 import { createHud, type Hud } from "./hud";
+import { type KeyNetFit, keyNetFaces } from "./keycore";
 import { createKeyMatcher, KEYMATCH_URL, type KeyMatcher } from "./keymatch";
+import { createKeyNet, KEYNET_URL, type KeyNetRunner } from "./keynetrunner";
+import { createKeyNetSession } from "./keynetsession";
 import {
   createKeySegmenter,
   createKeySnap,
@@ -90,6 +93,10 @@ const OUTLINE_EASE = 0.3;
 const OUTLINE_JUMP = 0.04;
 const DEPTH_KEY = "pianocv.keybedDepthUnits.v2";
 const FOCAL_KEY = "pianocv.cameraFocalFraction.v2";
+// ?engine=keynet swaps the whole detector/tracker/reader/matcher/segmenter pipeline for the
+// single KeyNet model, so the two can be compared side by side without running both at once
+const KEYNET_ENGINE =
+  new URLSearchParams(location.search).get("engine") === "keynet";
 
 function createVideo(): HTMLVideoElement {
   const video = document.createElement("video");
@@ -189,6 +196,16 @@ function keyStatusText(read: KeyRead | null): string {
   return `${read.whiteKeys} white keys from ${read.phase}, confidence ${(read.confidence * 100).toFixed(0)}%, black keys ${read.blackRaiseMm} mm up, strip ${read.stripKeys.toFixed(1)} keys wide`;
 }
 
+// what the HUD's "keynet" status line says: hunting for a keyboard, or the board it tracks and
+// whether the black keys' tops are used
+function keynetStatusText(fit: KeyNetFit | null): string {
+  if (fit === null) {
+    return "searching";
+  }
+  const tops = fit.lift !== null ? "black tops used" : "no black tops seen";
+  return `tracking ${fit.whiteKeys} white keys from ${fit.phase}, ${tops}`;
+}
+
 // the template draws a black key as its raised top and its front face; to match it against one
 // segmented key we take the outline of both
 type DrawnKey = {
@@ -220,9 +237,13 @@ function oneFacePerKey(faces: readonly DetectedKey[]): DrawnKey[] {
   const keys: DrawnKey[] = [];
   for (let i = 0; i < faces.length; i += 1) {
     const face = faces[i];
-    const front = faces[i + 1];
-    if (face.black && front?.black && front.semitone === face.semitone) {
-      keys.push({ ...face, bar: keyHull(face.bar, front.bar) });
+    const footprint = faces[i + 1];
+    if (
+      face.black &&
+      footprint?.black &&
+      footprint.semitone === face.semitone
+    ) {
+      keys.push({ ...face, bar: keyHull(face.bar, footprint.bar) });
       i += 1;
     } else {
       keys.push(face);
@@ -242,6 +263,7 @@ function startLoop(
   occlusionMask: OcclusionMask | null,
   keyMatcher: KeyMatcher | null,
   keySegmenter: KeySegmenter | null,
+  keyNet: KeyNetRunner | null,
 ): () => Corners {
   let hands: HandLandmarkerResult | null = null;
   let lastVideoTime = -1;
@@ -251,6 +273,7 @@ function startLoop(
   // itself never exposes a detection's raw gray image
   let lastDetection: Detection | null = null;
   const effects = createEffects();
+  const keyNetSession = keyNet ? createKeyNetSession(keyNet) : null;
 
   const remember = (key: string, value: number): void => {
     try {
@@ -365,7 +388,31 @@ function startLoop(
     ctx.translate(box.x, box.y);
     const state = tracker?.state();
     let trimmed: FarEdge | null = null;
-    if (state?.kind === "held") {
+    if (KEYNET_ENGINE) {
+      const size = { width: video.videoWidth, height: video.videoHeight };
+      if (keyNetSession && size.width > 0 && size.height > 0) {
+        void keyNetSession.step(video, size, now).catch(() => null);
+      }
+      const keynetFit = keyNetSession?.fit() ?? null;
+      if (keynetFit) {
+        drawQuad(ctx, [...keynetFit.quad], box.w, box.h, AUTO_COLOR, "keybed");
+        const keys = oneFacePerKey(keyNetFaces(keynetFit));
+        window.pianocvDrawnKeys = keys;
+        window.pianocvTemplateKeys = keys;
+        if (hud.state.keys) {
+          drawKeys(ctx, keys, box.w, box.h);
+        }
+      } else {
+        window.pianocvDrawnKeys = undefined;
+        window.pianocvTemplateKeys = undefined;
+      }
+      hud.status(
+        "keynet",
+        keyNet
+          ? `${keyNet.backend}, ${keynetStatusText(keynetFit)}`
+          : "unavailable",
+      );
+    } else if (state?.kind === "held") {
       const size = { width: video.videoWidth, height: video.videoHeight };
       const reading = tracker?.reading() ?? null;
       // a fresh labelState object marks a new hold for the labeller's own session
@@ -553,56 +600,80 @@ async function boot(): Promise<void> {
 
   try {
     const hud = createHud();
-    hud.status("model", "loading");
-    const loading = createDetector(viteAssets, modelUrl(MODEL_URL)).then(
-      (detector) => {
-        hud.status("model", `ready on ${detector.backend}`);
-        return detector;
-      },
-      (err: unknown) => {
-        hud.status("model", `unavailable (${errorMessage(err)})`);
-        return null;
-      },
-    );
-    const occlusionLoading = createOcclusionMask(viteAssets).then(
-      (mask) => {
-        hud.status("glow", "play a key to light it");
-        return mask;
-      },
-      () => {
-        hud.status("glow", "occlusion unavailable, glow draws over hands");
-        return null;
-      },
-    );
-    const matcherLoading = createKeyMatcher(
-      viteAssets,
-      modelUrl(KEYMATCH_URL),
-    ).then(
-      (matcher) => {
-        hud.status("keys", `matcher ready on ${matcher.backend}`);
-        return matcher;
-      },
-      () => {
-        hud.status("keys", "matcher unavailable, reading keys by brightness");
-        return null;
-      },
-    );
-    const segmenterLoading = createKeySegmenter(
-      viteAssets,
-      modelUrl(KEYSEG_URL),
-    ).then(
-      (segmenter) => {
-        hud.status("outline", `key segmenter ready on ${segmenter.backend}`);
-        return segmenter;
-      },
-      () => {
-        hud.status(
-          "outline",
-          "key segmenter unavailable, keys read on the mask outline",
+    // engine=keynet replaces the whole detector/matcher/segmenter pipeline, so there is no
+    // point loading any of it
+    if (!KEYNET_ENGINE) {
+      hud.status("model", "loading");
+    }
+    const loading = KEYNET_ENGINE
+      ? Promise.resolve(null)
+      : createDetector(viteAssets, modelUrl(MODEL_URL)).then(
+          (detector) => {
+            hud.status("model", `ready on ${detector.backend}`);
+            return detector;
+          },
+          (err: unknown) => {
+            hud.status("model", `unavailable (${errorMessage(err)})`);
+            return null;
+          },
         );
-        return null;
-      },
-    );
+    const occlusionLoading = KEYNET_ENGINE
+      ? Promise.resolve(null)
+      : createOcclusionMask(viteAssets).then(
+          (mask) => {
+            hud.status("glow", "play a key to light it");
+            return mask;
+          },
+          () => {
+            hud.status("glow", "occlusion unavailable, glow draws over hands");
+            return null;
+          },
+        );
+    const matcherLoading = KEYNET_ENGINE
+      ? Promise.resolve(null)
+      : createKeyMatcher(viteAssets, modelUrl(KEYMATCH_URL)).then(
+          (matcher) => {
+            hud.status("keys", `matcher ready on ${matcher.backend}`);
+            return matcher;
+          },
+          () => {
+            hud.status(
+              "keys",
+              "matcher unavailable, reading keys by brightness",
+            );
+            return null;
+          },
+        );
+    const segmenterLoading = KEYNET_ENGINE
+      ? Promise.resolve(null)
+      : createKeySegmenter(viteAssets, modelUrl(KEYSEG_URL)).then(
+          (segmenter) => {
+            hud.status(
+              "outline",
+              `key segmenter ready on ${segmenter.backend}`,
+            );
+            return segmenter;
+          },
+          () => {
+            hud.status(
+              "outline",
+              "key segmenter unavailable, keys read on the mask outline",
+            );
+            return null;
+          },
+        );
+    const keyNetLoading = KEYNET_ENGINE
+      ? createKeyNet(viteAssets, modelUrl(KEYNET_URL)).then(
+          (runner) => {
+            hud.status("keynet", `keynet ready on ${runner.backend}`);
+            return runner;
+          },
+          () => {
+            hud.status("keynet", "keynet unavailable");
+            return null;
+          },
+        )
+      : Promise.resolve(null);
     await startCamera(video);
     const ctx = canvas.getContext("2d");
     if (!ctx) {
@@ -635,6 +706,7 @@ async function boot(): Promise<void> {
       occlusionMask,
       await matcherLoading,
       await segmenterLoading,
+      await keyNetLoading,
     );
     const stream = video.srcObject;
     if (stream instanceof MediaStream) {

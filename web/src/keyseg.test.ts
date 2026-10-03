@@ -33,6 +33,45 @@ describe("cropFor", () => {
       expect(back.y).toBeCloseTo(quad[i].y, 6);
     });
   });
+
+  it("defaults to keyseg's own crop size", () => {
+    const quad = [
+      { x: 120, y: 300 },
+      { x: 520, y: 180 },
+      { x: 560, y: 260 },
+      { x: 150, y: 400 },
+    ];
+    expect(cropFor(quad)).toEqual(cropFor(quad, CROP_WIDTH, CROP_HEIGHT));
+  });
+
+  it("maps frame points back correctly at a crop size other than keyseg's own", () => {
+    const quad = [
+      { x: 120, y: 300 },
+      { x: 520, y: 180 },
+      { x: 560, y: 260 },
+      { x: 150, y: 400 },
+    ];
+    const width = 768;
+    const height = 160;
+    const crop = cropFor(quad, width, height);
+    for (const [cx, cy] of [
+      [0, 0],
+      [width, 0],
+      [width, height],
+      [0, height],
+      [width / 2, height / 2],
+    ]) {
+      const frame = cropToFrame(crop, cx, cy, width, height);
+      // inverts the crop's own similarity transform independently of cropFor/cropToFrame's own
+      // maths, so this checks the two agree at a size keyseg itself never uses
+      const dx = frame.x - crop.centre.x;
+      const dy = frame.y - crop.centre.y;
+      const u = dx * crop.along.x + dy * crop.along.y;
+      const v = dx * crop.across.x + dy * crop.across.y;
+      expect(u / crop.scale + width / 2).toBeCloseTo(cx, 6);
+      expect(v / crop.scale + height / 2).toBeCloseTo(cy, 6);
+    }
+  });
 });
 
 describe("keyOutline", () => {

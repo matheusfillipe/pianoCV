@@ -21,6 +21,10 @@ declare global {
 }
 export declare const STRIP_WIDTH = 1200;
 export declare const STRIP_HEIGHT = 150;
+/** Heights a black key's top may stand above the white keys, either way round since which side
+ * of the plane the camera sits on depends on how the corners wind; the fit picks the one that
+ * lets white and black evidence agree. */
+export declare const RAISE_CANDIDATES_MM: number[];
 /** The sizes keyboards are built in, told apart by the letter of their first white key, with the
  * MIDI note that first key plays. */
 export declare const STANDARD_BOARDS: readonly [{

@@ -38,19 +38,37 @@ function gpuWorker(assets: RuntimeAssets): GpuWorker {
   const worker = new Worker(new URL("./gpu-worker.ts", import.meta.url), {
     type: "module",
   });
-  const pending = new Map<number, (reply: GpuReply) => void>();
+  const pending = new Map<
+    number,
+    { resolve: (reply: GpuReply) => void; reject: (err: Error) => void }
+  >();
   let nextId = 0;
+  // a worker whose script fails to load never answers, so we fail every question it was asked
+  let broken: Error | null = null;
   worker.onmessage = (event: MessageEvent<GpuReply>) => {
-    pending.get(event.data.id)?.(event.data);
+    pending.get(event.data.id)?.resolve(event.data);
     pending.delete(event.data.id);
+  };
+  worker.onerror = (event: ErrorEvent) => {
+    broken = new Error(
+      `gpu worker failed: ${event.message || "script did not load"}`,
+    );
+    for (const { reject } of pending.values()) {
+      reject(broken);
+    }
+    pending.clear();
   };
   shared = {
     wasm: new URL(assets.ortGpuWasm, location.href).href,
     ask: (request, transfer = []) => {
       nextId += 1;
       const id = nextId;
-      return new Promise((resolve) => {
-        pending.set(id, resolve);
+      return new Promise((resolve, reject) => {
+        if (broken) {
+          reject(broken);
+          return;
+        }
+        pending.set(id, { resolve, reject });
         worker.postMessage({ ...request, id }, transfer);
       });
     },

@@ -12,6 +12,10 @@ export interface Vector3 {
 }
 export interface PlanePose {
     focal: number;
+    /** Millimetres per white-key width across the keys' depth, relative to along them: 1 when
+     * the pose took the keybed's depth as given, the measured ratio when it read the depth off
+     * the picture. */
+    depthScale: number;
     rotation: number[][];
     translation: number[];
     worldWidthMm: number;

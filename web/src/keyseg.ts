@@ -63,8 +63,14 @@ const unit = (p: Point): Point => {
 };
 const dot = (a: Point, b: Point): number => a.x * b.x + a.y * b.y;
 
-/** The crop around `quad`, given in frame pixels, the same one the model was trained on. */
-export function cropFor(quad: readonly Point[]): Crop {
+/** The crop around `quad`, given in frame pixels, the same one the model was trained on. `width`
+ * and `height` default to keyseg's own crop size; KeyNet's track mode passes its own, smaller
+ * crop, at the same margins. */
+export function cropFor(
+  quad: readonly Point[],
+  width: number = CROP_WIDTH,
+  height: number = CROP_HEIGHT,
+): Crop {
   const [farLeft, farRight, nearRight, nearLeft] = quad;
   const along = unit({
     x: farRight.x - farLeft.x + nearRight.x - nearLeft.x,
@@ -92,17 +98,19 @@ export function cropFor(quad: readonly Point[]): Crop {
   const alongExtent = spread(along) * (1 + 2 * MARGIN_ALONG);
   const acrossExtent =
     spread(across) + (alongExtent * MARGIN_ACROSS) / (1 + 2 * MARGIN_ALONG);
-  const scale = Math.max(
-    alongExtent / CROP_WIDTH,
-    acrossExtent / CROP_HEIGHT,
-    1e-6,
-  );
+  const scale = Math.max(alongExtent / width, acrossExtent / height, 1e-6);
   return { centre, along, across, scale };
 }
 
-export function cropToFrame(crop: Crop, x: number, y: number): Point {
-  const u = (x - CROP_WIDTH / 2) * crop.scale;
-  const v = (y - CROP_HEIGHT / 2) * crop.scale;
+export function cropToFrame(
+  crop: Crop,
+  x: number,
+  y: number,
+  width: number = CROP_WIDTH,
+  height: number = CROP_HEIGHT,
+): Point {
+  const u = (x - width / 2) * crop.scale;
+  const v = (y - height / 2) * crop.scale;
   return {
     x: crop.centre.x + u * crop.along.x + v * crop.across.x,
     y: crop.centre.y + u * crop.along.y + v * crop.across.y,

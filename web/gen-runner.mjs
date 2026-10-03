@@ -10,7 +10,9 @@ const targetFrames = Math.max(
   1,
   Number(process.env.PIANOCV_GEN_FRAMES) || 8000,
 );
-const outDirName = process.env.PIANOCV_GEN_OUT || "synth-case";
+const motion = process.env.PIANOCV_GEN_MOTION === "1";
+const outDirName =
+  process.env.PIANOCV_GEN_OUT || (motion ? "synth-motion" : "synth-case");
 
 const POLL_MS = 1_000;
 const STALL_MS = 60_000;
@@ -127,7 +129,7 @@ let headless;
 let cdp;
 try {
   const browser = browserPath();
-  const url = `http://127.0.0.1:${vitePort}/gen.html?out=${outDirName}&frames=${targetFrames}${process.env.PIANOCV_GEN_POSE ? `&${process.env.PIANOCV_GEN_POSE}` : ""}`;
+  const url = `http://127.0.0.1:${vitePort}/gen.html?out=${outDirName}&frames=${targetFrames}${motion ? "&motion=1" : ""}${process.env.PIANOCV_GEN_POSE ? `&${process.env.PIANOCV_GEN_POSE}` : ""}`;
   headless = spawn(
     browser,
     [

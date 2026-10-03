@@ -16,6 +16,12 @@ export type GpuRequest = {
     readonly url: string;
     readonly frame: ImageBitmap;
     readonly crop: Crop;
+} | {
+    readonly kind: "keynet";
+    readonly id: number;
+    readonly url: string;
+    readonly input: Float32Array;
+    readonly dims: readonly number[];
 };
 export type GpuReply = {
     readonly kind: "opened";
@@ -43,4 +49,14 @@ export type GpuReply = {
     }[] | null;
     /** Every key region, in frame pixels. */
     readonly regions: KeyRegion[];
+} | {
+    readonly kind: "keynetresult";
+    readonly id: number;
+    /** The model's raw outputs, or null when it gave no heatmaps. */
+    readonly outputs: KeyNetOutputs | null;
+};
+export type KeyNetOutputs = {
+    readonly heat: Float32Array;
+    readonly presence: number;
+    readonly offsets: Float32Array | null;
 };

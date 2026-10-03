@@ -48,7 +48,13 @@ import {
   noteName,
   pickBoardSize,
   pickCaseColorFamily,
+  type Range,
+  SWEEP_AZIMUTH_DEG,
+  SWEEP_DISTANCE_FACTOR,
+  SWEEP_ELEVATION_DEG,
   SWEEP_FOV_DEG,
+  SWEEP_ROLL_DEG,
+  type SweepPose,
   samplePose,
 } from "./sweep";
 
@@ -73,6 +79,12 @@ const ELEVATION_RANGE = rangeParam("elevation");
 const AZIMUTH_RANGE = rangeParam("azimuth");
 // ?frames=N starts the auto sweep unattended, for the headless generator runner
 const AUTOSTART_FRAMES = Number(PAGE_PARAMS.get("frames"));
+// ?motion=1 switches gen.html to rendering short camera-path sequences with motion blur into
+// data/synth-motion, instead of single random-sweep stills
+const MOTION_MODE = PAGE_PARAMS.get("motion") === "1";
+// ?out=synth-test renders the sequences into a held-out set that training never reads
+const MOTION_DIR: "synth-motion" | "synth-test" =
+  PAGE_PARAMS.get("out") === "synth-test" ? "synth-test" : "synth-motion";
 const CAPTURE_INTERVAL_MS = 300;
 // enough of the keybed to be worth a label; below this there is nothing to learn from
 const MIN_VISIBLE_FRACTION = 0.2;
@@ -88,6 +100,21 @@ const GRID_KEYBOARD: Keyboard = buildKeyboard(
   DEFAULT_KEY_VARIATION,
 );
 const BACKDROPS: BackdropKind[] = ["clutter", "noise", "gradient"];
+
+// a motion sequence covers a short hand-held move: pan, tilt, dolly and roll from a start pose
+// to a nearby end pose, plus a small sinusoidal shake so fast frames blur convincingly
+const MOTION_FRAME_COUNT: Range = { min: 24, max: 49 };
+const MOTION_SUBFRAMES = 4;
+const MOTION_EXPOSURE_SHARE: Range = { min: 0.2, max: 0.9 };
+const MOTION_PAN_DEG: Range = { min: 5, max: 45 };
+const MOTION_TILT_DEG: Range = { min: 3, max: 20 };
+const MOTION_DOLLY_FACTOR: Range = { min: 0.75, max: 1.3 };
+const MOTION_ROLL_DEG: Range = { min: 2, max: 12 };
+const MOTION_SHAKE_DEG = 1.2;
+const MOTION_SHAKE_CYCLES: Range = { min: 2, max: 6 };
+// a sequence's keyboard and case are hidden this often, so the model also learns what a frame
+// with no keyboard in it looks like
+const MOTION_NEGATIVE_PROBABILITY = 0.1;
 
 interface CaseState {
   readonly present: boolean;
@@ -143,6 +170,36 @@ function stamp(): string {
     `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-` +
     `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${pad(now.getMilliseconds() / 10)}`
   );
+}
+
+function clamp(value: number, range: Range): number {
+  return Math.min(range.max, Math.max(range.min, value));
+}
+
+// the pose sampling placeCamera and motion sequences both start from: samplePose narrowed by
+// the ?elevation=/?azimuth= page params, so a batch can cover the views the rest of the corpus
+// has too few of
+function sampleFramingPose(random: () => number): SweepPose {
+  const sampled = samplePose(random);
+  return {
+    ...sampled,
+    elevationDeg: ELEVATION_RANGE
+      ? between(random, ELEVATION_RANGE)
+      : sampled.elevationDeg,
+    azimuthDeg: AZIMUTH_RANGE
+      ? (random() < 0.5 ? -1 : 1) * between(random, AZIMUTH_RANGE)
+      : sampled.azimuthDeg,
+  };
+}
+
+function pngBlobFrom(source: HTMLCanvasElement): Blob {
+  const url = source.toDataURL("image/png");
+  const binary = atob(url.slice(url.indexOf(",") + 1));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: "image/png" });
 }
 
 async function post(
@@ -481,16 +538,7 @@ export async function boot(): Promise<void> {
     );
     applyKeyboard(currentKeyboard);
     layoutCase({ minZ: currentKeyboard.minZ, maxZ: currentKeyboard.maxZ });
-    const sampled = samplePose(random);
-    const sample = {
-      ...sampled,
-      elevationDeg: ELEVATION_RANGE
-        ? between(random, ELEVATION_RANGE)
-        : sampled.elevationDeg,
-      azimuthDeg: AZIMUTH_RANGE
-        ? (random() < 0.5 ? -1 : 1) * between(random, AZIMUTH_RANGE)
-        : sampled.azimuthDeg,
-    };
+    const sample = sampleFramingPose(random);
     const boardSpan = currentKeyboard.maxZ - currentKeyboard.minZ;
     currentRollDeg = sample.rollDeg;
     camera.fov = sample.fovDeg;
@@ -571,6 +619,16 @@ export async function boot(): Promise<void> {
     caseState: CaseState;
   }
 
+  interface MotionMeta {
+    corners: Point[] | null;
+    pose: CapturePose;
+    board: CaptureBoard;
+    keyGeometry: KeyVariation;
+    keys: KeyLabel[];
+    caseState: CaseState;
+    piano: boolean;
+  }
+
   const projectKeyLabels = (keyboard: Keyboard): KeyLabel[] =>
     keyboard.keys.map((k) => ({
       pitch: k.pitch,
@@ -587,13 +645,7 @@ export async function boot(): Promise<void> {
     directory: "synth" | "synth-case" | "synth-keys" | "grid",
   ): void => {
     stillCtx.drawImage(canvas, 0, 0);
-    const url = still.toDataURL("image/png");
-    const binary = atob(url.slice(url.indexOf(",") + 1));
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: "image/png" });
+    const blob = pngBlobFrom(still);
     const name =
       directory === "grid"
         ? `grid-e${meta.pose.elevation}-a${meta.pose.azimuth}-d${Math.round(meta.pose.distance)}`
@@ -630,6 +682,218 @@ export async function boot(): Promise<void> {
       .catch((err: unknown) => {
         status(err instanceof Error ? err.message : String(err));
       });
+  };
+
+  // one saved frame's png (the accumulated exposure) plus its sidecar, awaited so the next
+  // frame's render never starts before this one has left the browser
+  const captureMotionFrame = async (
+    sequenceId: string,
+    frameIndex: number,
+    meta: MotionMeta,
+  ): Promise<void> => {
+    const blob = pngBlobFrom(still);
+    const name = `motion-${sequenceId}-${String(frameIndex).padStart(4, "0")}`;
+    await post(`${name}.png`, blob, undefined, MOTION_DIR);
+    const sidecar: Record<string, unknown> = {
+      kind: "synth",
+      startedAt: Date.now(),
+      durationMs: 0,
+      imageWidth: WIDTH,
+      imageHeight: HEIGHT,
+      mimeType: "image/png",
+      pose: meta.pose,
+      board: meta.board,
+      keyGeometry: meta.keyGeometry,
+      keys: meta.keys,
+      case: meta.caseState.present,
+      caseColor: meta.caseState.colorFamily,
+      sequence: sequenceId,
+      frameIndex,
+      piano: meta.piano,
+    };
+    if (meta.corners) {
+      sidecar.corners = meta.corners;
+    }
+    await post(
+      `${name}.json`,
+      JSON.stringify(sidecar),
+      "application/json",
+      MOTION_DIR,
+    );
+    saved += 1;
+  };
+
+  // sequences run back to back until enough frames are saved; each one picks a keyboard, case,
+  // lighting and lens the way the random sweep does, then moves the camera smoothly from a
+  // start pose to a nearby end pose, blurring each frame across a few sub-renders
+  const runMotionMode = async (target: number): Promise<void> => {
+    let sequenceIndex = 0;
+    while (saved < target) {
+      sequenceIndex += 1;
+      const sequenceId = `${stamp()}-${sequenceIndex}`;
+      randomise();
+      randomiseLens();
+      const board = pickBoardSize(random);
+      const variation = sampleKeyVariation(random);
+      currentKeyboard = buildKeyboard(
+        { lowestPitch: board.range.lowest, keys: board.keys },
+        variation,
+      );
+      keysGroup.visible = true;
+      applyKeyboard(currentKeyboard);
+      layoutCase({ minZ: currentKeyboard.minZ, maxZ: currentKeyboard.maxZ });
+      const centre = centreFor(currentKeyboard.minZ, currentKeyboard.maxZ);
+      const boardSpan = currentKeyboard.maxZ - currentKeyboard.minZ;
+
+      // negatives: the keyboard and its case are hidden entirely, so the model also sees what
+      // no keyboard in view looks like
+      const negative = random() < MOTION_NEGATIVE_PROBABILITY;
+      if (negative) {
+        keysGroup.visible = false;
+        body.visible = false;
+      }
+
+      const start = sampleFramingPose(random);
+      const panSign = random() < 0.5 ? -1 : 1;
+      const tiltSign = random() < 0.5 ? -1 : 1;
+      const rollSign = random() < 0.5 ? -1 : 1;
+      const end: SweepPose = {
+        ...start,
+        elevationDeg: clamp(
+          start.elevationDeg + tiltSign * between(random, MOTION_TILT_DEG),
+          SWEEP_ELEVATION_DEG,
+        ),
+        azimuthDeg: clamp(
+          start.azimuthDeg + panSign * between(random, MOTION_PAN_DEG),
+          SWEEP_AZIMUTH_DEG,
+        ),
+        distanceFactor: clamp(
+          start.distanceFactor * between(random, MOTION_DOLLY_FACTOR),
+          SWEEP_DISTANCE_FACTOR,
+        ),
+        rollDeg: clamp(
+          start.rollDeg + rollSign * between(random, MOTION_ROLL_DEG),
+          SWEEP_ROLL_DEG,
+        ),
+      };
+      const shake = {
+        elevation: random() * MOTION_SHAKE_DEG,
+        azimuth: random() * MOTION_SHAKE_DEG,
+        roll: random() * MOTION_SHAKE_DEG * 0.5,
+        cycles: between(random, MOTION_SHAKE_CYCLES),
+        phaseE: random() * Math.PI * 2,
+        phaseA: random() * Math.PI * 2,
+        phaseR: random() * Math.PI * 2,
+      };
+
+      // t runs 0 to 1 over the whole sequence; the wobble term is a function of t too, so it
+      // stays a continuous, smoothly blurrable hand-held shake rather than per-frame noise
+      const poseAt = (t: number): SweepPose => {
+        const clamped = Math.min(1, Math.max(0, t));
+        const wobble = (amp: number, phase: number): number =>
+          amp * Math.sin(shake.cycles * Math.PI * 2 * clamped + phase);
+        return {
+          elevationDeg:
+            start.elevationDeg +
+            (end.elevationDeg - start.elevationDeg) * clamped +
+            wobble(shake.elevation, shake.phaseE),
+          azimuthDeg:
+            start.azimuthDeg +
+            (end.azimuthDeg - start.azimuthDeg) * clamped +
+            wobble(shake.azimuth, shake.phaseA),
+          distanceFactor:
+            start.distanceFactor +
+            (end.distanceFactor - start.distanceFactor) * clamped,
+          rollDeg:
+            start.rollDeg +
+            (end.rollDeg - start.rollDeg) * clamped +
+            wobble(shake.roll, shake.phaseR),
+          fovDeg: start.fovDeg,
+          offsetXFactor: start.offsetXFactor,
+          offsetYFactor: start.offsetYFactor,
+        };
+      };
+
+      const applyPathPose = (pose: SweepPose): void => {
+        currentRollDeg = pose.rollDeg;
+        camera.fov = pose.fovDeg;
+        camera.updateProjectionMatrix();
+        aim(
+          {
+            elevation: pose.elevationDeg,
+            azimuth: pose.azimuthDeg,
+            distance: boardSpan * pose.distanceFactor,
+          },
+          centre,
+        );
+        camera.rotateZ((pose.rollDeg * Math.PI) / 180);
+        camera.translateX(pose.offsetXFactor * boardSpan);
+        camera.translateY(pose.offsetYFactor * boardSpan);
+      };
+
+      const frameCount = Math.floor(between(random, MOTION_FRAME_COUNT));
+      const frameInterval = frameCount > 1 ? 1 / (frameCount - 1) : 1;
+
+      for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+        const centerT = frameCount > 1 ? frameIndex / (frameCount - 1) : 0;
+        // exposure is a random share of the gap between frames, so sub-renders sample a window
+        // around the frame's own time rather than the whole path
+        const exposure = frameInterval * between(random, MOTION_EXPOSURE_SHARE);
+        stillCtx.clearRect(0, 0, WIDTH, HEIGHT);
+        for (let sub = 0; sub < MOTION_SUBFRAMES; sub += 1) {
+          const subT =
+            MOTION_SUBFRAMES > 1
+              ? centerT -
+                exposure / 2 +
+                exposure * (sub / (MOTION_SUBFRAMES - 1))
+              : centerT;
+          applyPathPose(poseAt(subT));
+          renderer.render(scene, camera);
+          // cumulative moving average: alpha 1/(sub+1) makes each draw carry equal weight in
+          // the final blend, source-over compositing does the rest
+          stillCtx.globalAlpha = 1 / (sub + 1);
+          stillCtx.drawImage(canvas, 0, 0);
+        }
+        stillCtx.globalAlpha = 1;
+
+        // the saved corners and keys are the centre-time pose, not any blurred sub-render; only
+        // a render refreshes the camera's world matrix, so we refresh it before projecting
+        applyPathPose(poseAt(centerT));
+        camera.updateMatrixWorld();
+        const activeCorners = cornersFor(
+          currentKeyboard.minZ,
+          currentKeyboard.maxZ,
+        );
+        const corners = projectCorners(camera, activeCorners);
+        const fraction = visibleFraction(camera, activeCorners);
+        if (!negative && fraction < MIN_VISIBLE_FRACTION) {
+          break;
+        }
+        const pose = cameraPoseDeg(centre);
+        await captureMotionFrame(sequenceId, frameIndex, {
+          corners: negative ? null : corners,
+          pose: { ...pose, rollDeg: currentRollDeg, fovDeg: camera.fov },
+          board: {
+            keys: currentKeyboard.board.keys,
+            whiteKeys: currentKeyboard.whiteKeys,
+            lowestPitch: currentKeyboard.board.lowestPitch,
+            lowestNote: noteName(currentKeyboard.board.lowestPitch),
+          },
+          keyGeometry: currentKeyboard.variation,
+          keys: negative ? [] : projectKeyLabels(currentKeyboard),
+          caseState: negative
+            ? { present: false, colorFamily: null }
+            : currentCase,
+          piano: !negative,
+        });
+        status(
+          `motion seq ${sequenceIndex} frame ${frameIndex + 1}/${frameCount}  saved ${saved}/${target}`,
+        );
+        if (saved >= target) {
+          return;
+        }
+      }
+    }
   };
 
   shuffle.addEventListener("click", () => {
@@ -686,6 +950,15 @@ export async function boot(): Promise<void> {
       randomiseLens();
     }
   });
+
+  if (MOTION_MODE) {
+    const target =
+      Number.isFinite(AUTOSTART_FRAMES) && AUTOSTART_FRAMES > 0
+        ? AUTOSTART_FRAMES
+        : DEFAULT_SWEEP_TARGET;
+    await runMotionMode(target);
+    return;
+  }
 
   if (Number.isFinite(AUTOSTART_FRAMES) && AUTOSTART_FRAMES > 0) {
     sweepCount.value = String(AUTOSTART_FRAMES);
