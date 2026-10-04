@@ -32,6 +32,7 @@ export declare const BOARD_SIZES: readonly BoardSize[];
 export declare function pickBoardSize(random: () => number): BoardSize;
 export declare const CASE_PRESENCE_PROBABILITY = 0.9;
 export declare const CASE_BACK_DEPTH_MM: Range;
+export declare const CASE_TOP_STANDOFF_MM: Range;
 export declare const CASE_CHEEK_WIDTH_MM: Range;
 export type CaseColorFamily = "black" | "darkGrey" | "silver" | "white" | "wood";
 export interface CaseColorSpec {

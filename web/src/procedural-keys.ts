@@ -17,6 +17,7 @@ export interface KeyboardBoard {
 }
 
 export interface KeyVariation {
+  readonly whiteWidthScale: number;
   readonly blackWidthFrac: number;
   readonly blackOffsetJitter: readonly [number, number, number, number, number];
   readonly blackHeightMm: number;
@@ -25,15 +26,17 @@ export interface KeyVariation {
   readonly bevelMm: number;
 }
 
-export const BLACK_WIDTH_FRAC: Range = { min: 0.54, max: 0.62 };
-export const BLACK_OFFSET_JITTER: Range = { min: -0.02, max: 0.02 };
-export const BLACK_HEIGHT_MM: Range = { min: 9, max: 14 };
-export const BLACK_LENGTH_FRAC: Range = { min: 0.6, max: 0.68 };
-export const WHITE_GAP_MM: Range = { min: 0.5, max: 1.5 };
-export const BEVEL_MM: Range = { min: 0.4, max: 1.5 };
+export const WHITE_WIDTH_SCALE: Range = { min: 0.92, max: 1.08 };
+export const BLACK_WIDTH_FRAC: Range = { min: 0.5, max: 0.66 };
+export const BLACK_OFFSET_JITTER: Range = { min: -0.03, max: 0.03 };
+export const BLACK_HEIGHT_MM: Range = { min: 5, max: 16 };
+export const BLACK_LENGTH_FRAC: Range = { min: 0.55, max: 0.72 };
+export const WHITE_GAP_MM: Range = { min: 0.3, max: 2.4 };
+export const BEVEL_MM: Range = { min: 0.3, max: 2 };
 
 export function sampleKeyVariation(random: () => number): KeyVariation {
   return {
+    whiteWidthScale: between(random, WHITE_WIDTH_SCALE),
     blackWidthFrac: between(random, BLACK_WIDTH_FRAC),
     blackOffsetJitter: [
       between(random, BLACK_OFFSET_JITTER),
@@ -139,8 +142,9 @@ export function buildKeyboard(
   board: KeyboardBoard,
   variation: KeyVariation,
 ): Keyboard {
-  const whiteUnit = mmToUnits(WHITE_KEY_WIDTH_MM);
-  const gapFrac = variation.whiteGapMm / WHITE_KEY_WIDTH_MM;
+  const whiteUnit = mmToUnits(WHITE_KEY_WIDTH_MM) * variation.whiteWidthScale;
+  const gapFrac =
+    variation.whiteGapMm / (WHITE_KEY_WIDTH_MM * variation.whiteWidthScale);
   const bevelUnits = mmToUnits(variation.bevelMm);
   const blackHeightUnits = mmToUnits(variation.blackHeightMm);
   const blackFrontX = BACK_X + variation.blackLengthFrac * DEPTH;

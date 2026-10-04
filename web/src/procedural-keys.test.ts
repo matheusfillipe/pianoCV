@@ -62,10 +62,11 @@ describe("buildKeyboard", () => {
   });
 
   it("places every black key within its template's jittered offset, at the sampled width", () => {
-    const whiteUnit = mmToUnits(WHITE_KEY_WIDTH_MM);
     for (let i = 0; i < 30; i += 1) {
       const seed = i / 30;
       const variation = sampleKeyVariation(() => seed);
+      const whiteUnit =
+        mmToUnits(WHITE_KEY_WIDTH_MM) * variation.whiteWidthScale;
       const keyboard = buildKeyboard(STANDARD_BOARDS[3], variation);
       for (const key of keyboard.keys) {
         if (!key.black) {
@@ -80,8 +81,8 @@ describe("buildKeyboard", () => {
         const offset = (blackLeft - precedingSlotLeft) / whiteUnit;
         const pc = ((key.pitch % 12) + 12) % 12;
         const template = BLACK_TEMPLATE_OFFSETS[pc];
-        expect(offset).toBeGreaterThanOrEqual(template - 0.021);
-        expect(offset).toBeLessThanOrEqual(template + 0.021);
+        expect(offset).toBeGreaterThanOrEqual(template - 0.031);
+        expect(offset).toBeLessThanOrEqual(template + 0.031);
         expect(key.body.size[2] / whiteUnit).toBeCloseTo(
           variation.blackWidthFrac,
         );

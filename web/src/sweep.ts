@@ -101,6 +101,7 @@ export function pickBoardSize(random: () => number): BoardSize {
 // the way the model looked before a case existed at all
 export const CASE_PRESENCE_PROBABILITY = 0.9;
 export const CASE_BACK_DEPTH_MM: Range = { min: 60, max: 250 };
+export const CASE_TOP_STANDOFF_MM: Range = { min: 10, max: 150 };
 export const CASE_CHEEK_WIDTH_MM: Range = { min: 20, max: 80 };
 
 export type CaseColorFamily =

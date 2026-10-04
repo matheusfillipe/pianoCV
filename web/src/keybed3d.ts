@@ -1,5 +1,5 @@
-import type { PerspectiveCamera } from "three";
-import { Vector3 } from "three";
+import type { Object3D, PerspectiveCamera } from "three";
+import { Raycaster, Vector3 } from "three";
 import type { Point } from "./homography";
 
 // The scene's keyboard units, measured once from a reference piano mesh: the playable keys run
@@ -62,7 +62,7 @@ export const KEYBED_CORNERS: Vector3[] = cornersFor(SPAN_MIN_Z, SPAN_MAX_Z);
 export const KEYBED_CENTRE = centreFor(SPAN_MIN_Z, SPAN_MAX_Z);
 
 const CASE_TOP_STANDOFF_MM = 40;
-const CASE_BODY_DEPTH_MM = 90;
+export const CASE_BODY_DEPTH_MM = 90;
 const CASE_RAIL_HEIGHT_MM = 18;
 const CASE_RAIL_DEPTH_MM = 30;
 
@@ -92,10 +92,11 @@ export function caseLayout(
   crop: KeybedCrop,
   backDepthMm: number,
   cheekWidthMm: number,
+  topStandoffMm = CASE_TOP_STANDOFF_MM,
 ): CaseLayout {
   const backDepth = mmToUnits(backDepthMm);
   const cheekWidth = mmToUnits(cheekWidthMm);
-  const topY = BLACK_TOP_Y + mmToUnits(CASE_TOP_STANDOFF_MM);
+  const topY = BLACK_TOP_Y + mmToUnits(topStandoffMm);
   const railHeight = mmToUnits(CASE_RAIL_HEIGHT_MM);
   const railDepth = mmToUnits(CASE_RAIL_DEPTH_MM);
   const bodyBottomY = KEY_BOTTOM_Y - mmToUnits(CASE_BODY_DEPTH_MM);
@@ -199,6 +200,42 @@ export function projectCorners(
   return corners.map((corner) => {
     scratch.copy(corner).project(camera);
     return { x: (scratch.x + 1) / 2, y: (1 - scratch.y) / 2 };
+  });
+}
+
+const CORNER_RAY_EPSILON = 0.02;
+const cornerRay = new Raycaster();
+const cameraPosition = new Vector3();
+const ahead = new Vector3();
+
+// a corner is visible when it is inside the camera frustum and nothing in `occluders` lies
+// between the camera and it; the keys are left out of the occluders so the surface the corner
+// sits on never hides it
+export function cornersVisible(
+  camera: PerspectiveCamera,
+  corners: readonly Vector3[],
+  occluders: readonly Object3D[],
+): boolean[] {
+  camera.getWorldPosition(cameraPosition);
+  const solid = occluders.filter((occluder) => occluder.visible);
+  return corners.map((corner) => {
+    ahead.copy(corner).project(camera);
+    const inFrustum =
+      ahead.z < 1 &&
+      ahead.x >= -1 &&
+      ahead.x <= 1 &&
+      ahead.y >= -1 &&
+      ahead.y <= 1;
+    if (!inFrustum) {
+      return false;
+    }
+    const distance = cameraPosition.distanceTo(corner);
+    cornerRay.set(
+      cameraPosition,
+      ahead.copy(corner).sub(cameraPosition).normalize(),
+    );
+    cornerRay.far = distance - CORNER_RAY_EPSILON;
+    return cornerRay.intersectObjects([...solid], false).length === 0;
   });
 }
 

@@ -7,25 +7,31 @@ import {
   Group,
   Mesh,
   MeshStandardMaterial,
+  PCFSoftShadowMap,
   PerspectiveCamera,
+  PlaneGeometry,
   PMREMGenerator,
   Scene,
   SRGBColorSpace,
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { type BackdropKind, makeBackdrop } from "./backdrop";
+import { type BackdropKind, makeBackdrop, makeFloorTexture } from "./backdrop";
 import { drawQuad } from "./draw";
 import { makeEnvironments } from "./environments";
 import type { Point } from "./homography";
 import { styleButton } from "./hud";
 import {
+  CASE_BODY_DEPTH_MM,
   type CaseBox,
   type CaseLayout,
   caseLayout,
   centreFor,
   cornersFor,
+  cornersVisible,
+  KEY_BOTTOM_Y,
   type KeybedCrop,
+  mmToUnits,
   panelDetails,
   projectCorners,
   visibleFraction,
@@ -44,6 +50,7 @@ import {
   CASE_BACK_DEPTH_MM,
   CASE_CHEEK_WIDTH_MM,
   CASE_PRESENCE_PROBABILITY,
+  CASE_TOP_STANDOFF_MM,
   type CaseColorFamily,
   noteName,
   pickBoardSize,
@@ -99,6 +106,7 @@ const GRID_KEYBOARD: Keyboard = buildKeyboard(
   { lowestPitch: FULL_BOARD.range.lowest, keys: FULL_BOARD.keys },
   DEFAULT_KEY_VARIATION,
 );
+const FLOOR_PROBABILITY = 0.75;
 const BACKDROPS: BackdropKind[] = ["clutter", "noise", "gradient"];
 
 // a motion sequence covers a short hand-held move: pan, tilt, dolly and roll from a start pose
@@ -250,6 +258,8 @@ export async function boot(): Promise<void> {
   renderer.setSize(WIDTH, HEIGHT, false);
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCFSoftShadowMap;
 
   const scene = new Scene();
   const pmrem = new PMREMGenerator(renderer);
@@ -265,7 +275,23 @@ export async function boot(): Promise<void> {
   const key = new DirectionalLight(0xffffff, 2);
   const fill = new DirectionalLight(0xffffff, 1);
   const ambient = new AmbientLight(0xffffff, 0.4);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.left = -20;
+  key.shadow.camera.right = 20;
+  key.shadow.camera.top = 20;
+  key.shadow.camera.bottom = -20;
+  key.shadow.camera.near = 1;
+  key.shadow.camera.far = 80;
+  key.shadow.bias = -0.0005;
   scene.add(key, fill, ambient);
+
+  const floorMaterial = new MeshStandardMaterial({ roughness: 0.8 });
+  const floorMesh = new Mesh(new PlaneGeometry(200, 200), floorMaterial);
+  floorMesh.rotation.x = -Math.PI / 2;
+  floorMesh.position.y = KEY_BOTTOM_Y - mmToUnits(CASE_BODY_DEPTH_MM);
+  floorMesh.receiveShadow = true;
+  scene.add(floorMesh);
 
   // a real instrument is a case around the keys: a back panel behind the black keys' back end,
   // end cheeks at both ends, a front rail under the white keys' front edge, and a body
@@ -278,6 +304,16 @@ export async function boot(): Promise<void> {
   const cheekHighMesh = new Mesh(caseUnitBox, caseMaterial);
   const frontRailMesh = new Mesh(caseUnitBox, caseMaterial);
   const caseBodyMesh = new Mesh(caseUnitBox, caseMaterial);
+  for (const mesh of [
+    backPanelMesh,
+    cheekLowMesh,
+    cheekHighMesh,
+    frontRailMesh,
+    caseBodyMesh,
+  ]) {
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+  }
   body.add(
     backPanelMesh,
     cheekLowMesh,
@@ -291,11 +327,25 @@ export async function boot(): Promise<void> {
     { length: MAX_PANEL_DETAILS },
     () => new MeshStandardMaterial(),
   );
-  const panelDetailMeshes = panelDetailMaterials.map(
-    (material) => new Mesh(caseUnitBox, material),
-  );
+  const panelDetailMeshes = panelDetailMaterials.map((material) => {
+    const mesh = new Mesh(caseUnitBox, material);
+    mesh.receiveShadow = true;
+    return mesh;
+  });
   body.add(...panelDetailMeshes);
   scene.add(body);
+
+  const caseOccluders = (): Mesh[] =>
+    body.visible
+      ? [
+          backPanelMesh,
+          cheekLowMesh,
+          cheekHighMesh,
+          frontRailMesh,
+          caseBodyMesh,
+          ...panelDetailMeshes,
+        ]
+      : [];
 
   const placeBox = (mesh: Mesh, box: CaseBox): void => {
     mesh.scale.set(box.size[0], box.size[1], box.size[2]);
@@ -304,20 +354,56 @@ export async function boot(): Promise<void> {
 
   // the keyboard itself: a pool of body+bevel-cap mesh pairs sized for the largest standard
   // board, toggled visible per key so a smaller board simply leaves the tail of the pool hidden
-  const whiteKeyMaterial = new MeshStandardMaterial({ color: 0xf1efe6 });
-  const blackKeyMaterial = new MeshStandardMaterial({ color: 0x0a0a0a });
-  const keyMaterials = [whiteKeyMaterial, blackKeyMaterial];
-  const keyBodyMeshes = Array.from(
+  const keyMaterials = Array.from(
     { length: MAX_KEYS },
-    () => new Mesh(caseUnitBox, whiteKeyMaterial),
+    () => new MeshStandardMaterial(),
   );
-  const keyCapMeshes = Array.from(
-    { length: MAX_KEYS },
-    () => new Mesh(caseUnitBox, whiteKeyMaterial),
+  const keyIsBlack: boolean[] = keyMaterials.map(() => false);
+  const keyBodyMeshes = keyMaterials.map(
+    (material) => new Mesh(caseUnitBox, material),
   );
+  const keyCapMeshes = keyMaterials.map(
+    (material) => new Mesh(caseUnitBox, material),
+  );
+  for (const mesh of [...keyBodyMeshes, ...keyCapMeshes]) {
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+  }
   const keysGroup = new Group();
   keysGroup.add(...keyBodyMeshes, ...keyCapMeshes);
   scene.add(keysGroup);
+
+  interface KeyLook {
+    white: Color;
+    black: Color;
+    roughness: number;
+    metalness: number;
+    envMapIntensity: number;
+    wear: number;
+  }
+  let keyLook: KeyLook = {
+    white: new Color(0xf1efe6),
+    black: new Color(0x0a0a0a),
+    roughness: 0.4,
+    metalness: 0,
+    envMapIntensity: 1,
+    wear: 0,
+  };
+
+  const paintKeys = (): void => {
+    keyMaterials.forEach((material, i) => {
+      const jitter = (random() - 0.5) * keyLook.wear;
+      material.color
+        .copy(keyIsBlack[i] ? keyLook.black : keyLook.white)
+        .offsetHSL(0, 0, jitter);
+      material.roughness = Math.min(
+        1,
+        Math.max(0, keyLook.roughness + jitter * 2),
+      );
+      material.metalness = keyLook.metalness;
+      material.envMapIntensity = keyLook.envMapIntensity;
+    });
+  };
 
   const applyKeyboard = (keyboard: Keyboard): void => {
     for (let i = 0; i < MAX_KEYS; i += 1) {
@@ -329,12 +415,11 @@ export async function boot(): Promise<void> {
       if (!key) {
         continue;
       }
-      const material = key.black ? blackKeyMaterial : whiteKeyMaterial;
-      bodyMesh.material = material;
-      capMesh.material = material;
+      keyIsBlack[i] = key.black;
       placeBox(bodyMesh, key.body);
       placeBox(capMesh, key.cap);
     }
+    paintKeys();
   };
 
   const panel = document.createElement("div");
@@ -400,6 +485,7 @@ export async function boot(): Promise<void> {
       crop,
       between(random, CASE_BACK_DEPTH_MM),
       between(random, CASE_CHEEK_WIDTH_MM),
+      between(random, CASE_TOP_STANDOFF_MM),
     );
     placeBox(backPanelMesh, currentCaseLayout.backPanel);
     placeBox(cheekLowMesh, currentCaseLayout.cheekLow);
@@ -432,20 +518,42 @@ export async function boot(): Promise<void> {
       random() * 20 - 10,
     );
     fill.intensity = random() * 1.5;
+    fill.color.setHSL(
+      random(),
+      random() < 0.3 ? 0.9 : 0.1,
+      0.5 + random() * 0.4,
+    );
     ambient.intensity = 0.1 + random() * 0.7;
     scene.environment =
       environments[Math.floor(random() * environments.length)];
     scene.environmentIntensity = 0.15 + random() * 1.9;
     scene.environmentRotation.y = random() * Math.PI * 2;
     renderer.toneMappingExposure = 0.55 + random() * 1.15;
-    for (const material of keyMaterials) {
-      // key plastic runs from matte to near mirror, and the reflection is what a flat
-      // brightness jitter can never fake
-      material.roughness = 0.04 + random() * random() * 0.85;
-      material.metalness = random() * 0.35;
-      material.envMapIntensity = 0.3 + random() * 2.2;
-      material.needsUpdate = true;
-    }
+    // ivory, pure white and grey-green whites, black plastic from jet to worn charcoal, and
+    // plastic from matte to near mirror: the reflection is what a flat brightness jitter can
+    // never fake
+    keyLook = {
+      white: new Color().setHSL(
+        0.08 + random() * 0.12,
+        random() * 0.35,
+        0.62 + random() * 0.33,
+      ),
+      black: new Color().setHSL(
+        random(),
+        random() * 0.3,
+        0.01 + random() * 0.14,
+      ),
+      roughness: 0.04 + random() * random() * 0.85,
+      metalness: random() * 0.35,
+      envMapIntensity: 0.3 + random() * 2.2,
+      wear: random() < 0.5 ? 0 : random() * 0.12,
+    };
+    paintKeys();
+    floorMesh.visible = random() < FLOOR_PROBABILITY;
+    floorMaterial.map?.dispose();
+    floorMaterial.map = makeFloorTexture(random);
+    floorMaterial.roughness = 0.3 + random() * 0.7;
+    floorMaterial.needsUpdate = true;
     // present in most frames so the model mostly sees a case, and sometimes just floating keys,
     // the way it looked before a case existed at all
     const present = random() < CASE_PRESENCE_PROBABILITY;
@@ -473,6 +581,9 @@ export async function boot(): Promise<void> {
           saturation * 0.5,
           Math.min(1, lightness + detail.lighter),
         );
+        const glowing = random() < 0.35;
+        panelDetailMaterials[i].emissive.setHSL(random(), 1, glowing ? 0.5 : 0);
+        panelDetailMaterials[i].emissiveIntensity = 0.6 + random() * 1.6;
         panelDetailMaterials[i].needsUpdate = true;
       }
       currentCase = { present: true, colorFamily: family.family };
@@ -612,6 +723,7 @@ export async function boot(): Promise<void> {
   }
 
   interface CaptureMeta {
+    cornerVisible: boolean[];
     pose: CapturePose;
     board: CaptureBoard;
     keyGeometry: KeyVariation;
@@ -621,6 +733,7 @@ export async function boot(): Promise<void> {
 
   interface MotionMeta {
     corners: Point[] | null;
+    cornerVisible: boolean[];
     pose: CapturePose;
     board: CaptureBoard;
     keyGeometry: KeyVariation;
@@ -659,6 +772,7 @@ export async function boot(): Promise<void> {
             startedAt: Date.now(),
             durationMs: 0,
             corners,
+            cornerVisible: meta.cornerVisible,
             imageWidth: WIDTH,
             imageHeight: HEIGHT,
             mimeType: "image/png",
@@ -713,6 +827,7 @@ export async function boot(): Promise<void> {
     };
     if (meta.corners) {
       sidecar.corners = meta.corners;
+      sidecar.cornerVisible = meta.cornerVisible;
     }
     await post(
       `${name}.json`,
@@ -872,6 +987,7 @@ export async function boot(): Promise<void> {
         const pose = cameraPoseDeg(centre);
         await captureMotionFrame(sequenceId, frameIndex, {
           corners: negative ? null : corners,
+          cornerVisible: cornersVisible(camera, activeCorners, caseOccluders()),
           pose: { ...pose, rollDeg: currentRollDeg, fovDeg: camera.fov },
           board: {
             keys: currentKeyboard.board.keys,
@@ -998,6 +1114,11 @@ export async function boot(): Promise<void> {
         capture(
           corners,
           {
+            cornerVisible: cornersVisible(
+              camera,
+              activeCorners,
+              caseOccluders(),
+            ),
             pose: { ...gridPose, rollDeg: 0, fovDeg: GRID_FOV },
             board: {
               keys: currentKeyboard.board.keys,
@@ -1032,6 +1153,7 @@ export async function boot(): Promise<void> {
       capture(
         corners,
         {
+          cornerVisible: cornersVisible(camera, activeCorners, caseOccluders()),
           pose: { ...pose, rollDeg: currentRollDeg, fovDeg: camera.fov },
           board: {
             keys: currentKeyboard.board.keys,

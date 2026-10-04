@@ -5,6 +5,7 @@ export interface KeyboardBoard {
     readonly keys: number;
 }
 export interface KeyVariation {
+    readonly whiteWidthScale: number;
     readonly blackWidthFrac: number;
     readonly blackOffsetJitter: readonly [number, number, number, number, number];
     readonly blackHeightMm: number;
@@ -12,6 +13,7 @@ export interface KeyVariation {
     readonly whiteGapMm: number;
     readonly bevelMm: number;
 }
+export declare const WHITE_WIDTH_SCALE: Range;
 export declare const BLACK_WIDTH_FRAC: Range;
 export declare const BLACK_OFFSET_JITTER: Range;
 export declare const BLACK_HEIGHT_MM: Range;
