@@ -6,14 +6,14 @@ PORT ?= 5274
 
 .DEFAULT_GOAL := help
 .PHONY: help install fix precommit check list-lab-data lab-extract lab-train lab-detect \
-        lab-seg2-kaggle-run lab-seg2-kaggle-output lab-browser-gridtest lab-keys-eval \
+        lab-seg2-kaggle-run lab-seg2-kaggle-output \
         lab-synth-generate lab-synth-motion \
         tools-fix tools-format-check tools-lint tools-typecheck \
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit tools-upgrade \
         build web-typecheck web-lint web-fix web-test web-build dev dev-alt model site publish-models clean lab-export \
-        lab-evaluate lab-real-seg2-prepare lab-relabel-keys lab-compare lab-trainseg2 lab-dataset-push \
-        lab-keymatch-train lab-keymatch-push lab-keyseg-train lab-keyseg-labels lab-keyseg-push lab-keynet-push lab-keynet-train lab-keynet-eval lab-synth-test \
-        core-lint core-test core-wasm core-fix lab-mlflow-log
+        lab-evaluate lab-real-seg2-prepare lab-compare lab-trainseg2 lab-dataset-push \
+        lab-keymatch-train lab-keymatch-push lab-keyseg-train lab-keyseg-push lab-keynet-push lab-keynet-train lab-keynet-eval lab-synth-test \
+        core-lint core-test core-wasm core-fix lab-mlflow-log lab-keynet-fp16
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -108,9 +108,9 @@ dev: ## run the web dev server (vite)
 dev-alt: ## run the web dev server on another port, for when 5273 is already held by a different checkout (make dev-alt PORT=5274)
 	$(BUN) run dev -- --port $(PORT)
 
-MODELS := keybed_seg2.onnx keymatch.onnx keyseg.onnx
+MODELS := keynet.onnx
 
-model: ## download the trained models from hugging face into web/public
+model: ## download the trained model from hugging face into web/public
 	@for model in $(MODELS); do \
 		curl -fL --create-dirs -o web/public/$$model \
 			https://huggingface.co/$(MODEL_REPO)/resolve/main/$$model || exit 1; \
@@ -176,14 +176,8 @@ lab-jitter: ## measure how much the detection moves on static recordings
 lab-gridtest: ## score the detector per pose on the deterministic render grid (data/grid)
 	cd tools && uv run python -m pianocv.gridtest $(ARGS)
 
-lab-browser-gridtest: ## run the served browser ONNX model over the deterministic 3D grid
-	cd web && bun grid-eval-runner.mjs
 
-lab-keys-eval: ## run the live keyboard pipeline headless on every saved recording and report hold time, trim, key count and black-key alignment
-	cd web && bun keys-eval-runner.mjs
 
-lab-keyseg-labels: ## label frames of every saved recording with the keys the app fits to them, for training (data/real-keys)
-	cd web && PIANOCV_EXPORT_LABELS=data/real-keys PIANOCV_SYNTHETIC=none bun keys-eval-runner.mjs
 
 lab-corpus-bake: ## bake data/synth down to the net's input size (data/corpus); ARGS="--synth-dir ... --out-dir ..." to bake other directories, repeat --synth-dir to merge several
 	cd tools && uv run python -m pianocv.bake $(ARGS)
@@ -202,8 +196,6 @@ lab-evaluate: ## evaluate a detector on already-extracted labelled frames
 lab-real-seg2-prepare: ## prepare real labelled frames for SegNet2 fine-tuning
 	cd tools && uv run python -m pianocv.realseg2 $(ARGS)
 
-lab-relabel-keys: ## relabel the real frames and each recording's truth keys-only, with the live far-edge trim (data/real-seg2-keys, data/recordings-keys-truth.json)
-	cd web && bun relabel-keys-runner.mjs
 
 lab-compare: ## compare onnx keybed detectors on the render grid and on real recordings
 	$(UV) python -m pianocv.compare $(ARGS)
@@ -225,6 +217,9 @@ lab-keyseg-push: ## pack data/real-keys, pianocv and the published keyseg.onnx f
 
 lab-keynet-push: ## pack data/real-keys, data/synth-motion, pianocv and keyseg.onnx for a KeyNet run and upload them with mc (ARGS="--alias <mc alias> --version <v>")
 	cd tools && uv run python -m pianocv.keysegpush --name keynet --motion-dir ../data/synth-motion $(ARGS)
+
+lab-keynet-fp16: ## convert a KeyNet export to half precision (ARGS="<source.onnx> <target.onnx>")
+	cd tools && uv run python -m pianocv.keynetfp16 $(ARGS)
 
 lab-mlflow-log: ## log a model's scores from a score JSON onto its MLflow run (ARGS="--tracking-uri <url> --run-id <id> --scores <json> --model <file> --prefix <what>")
 	cd tools && uv run python -m pianocv.mlflowlog $(ARGS)

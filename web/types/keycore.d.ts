@@ -1,6 +1,11 @@
 import type { Homography, Point } from "./homography";
-import type { Size } from "./keyspace";
-import type { DetectedKey } from "./keystrip";
+import type { Bar, Size } from "./keyspace";
+export type DetectedKey = {
+    readonly bar: Bar;
+    readonly black: boolean;
+    /** Semitones above the board's first white key, which is what maps a MIDI note onto it. */
+    readonly semitone: number;
+};
 export type ScoredPoint = Point & {
     readonly score: number;
 };
@@ -62,6 +67,9 @@ export declare function refineHomography(pairs: readonly {
 }[]): Homography | null;
 /** The keys to draw: flat on the keybed until the fit has a lift for the black keys' tops. */
 export declare function keyNetFaces(fit: KeyNetFit): DetectedKey[];
+/** The outline of a black key's top and front faces together, starting at the top's first
+ * corner and wound the same way, so each point of it is the same spot of the key every frame. */
+export declare function keyHull(top: readonly Point[], front: readonly Point[]): Point[];
 export declare function decodeHeatmaps(heat: Float32Array, width: number, height: number, toFrame: Homography, offsets: Float32Array | null): KeyNetPeaks;
 export declare function prepareInput(rgba: Uint8ClampedArray, pixels: Size, crop: CropRequest): Float32Array;
 export declare class KeyNetLoop {

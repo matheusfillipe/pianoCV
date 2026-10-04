@@ -1,6 +1,5 @@
 import { outsideBlackKeys, tracePolygon } from "./draw";
 import type { Point } from "./homography";
-import { STANDARD_BOARDS } from "./keystrip";
 
 declare global {
   interface Window {
@@ -8,6 +7,15 @@ declare global {
     pianocvPlay?: (pitch: number, velocity: number) => void;
   }
 }
+
+/** The sizes keyboards are built in, told apart by the letter of their first white key, with the
+ * MIDI note that first key plays. */
+const STANDARD_BOARDS = [
+  { phase: "C", whiteKeys: 29, lowestPitch: 36 },
+  { phase: "C", whiteKeys: 36, lowestPitch: 36 },
+  { phase: "E", whiteKeys: 45, lowestPitch: 28 },
+  { phase: "A", whiteKeys: 52, lowestPitch: 21 },
+] as const;
 
 /** The lowest MIDI pitch of a standard board with this many white keys starting on this
  * letter, or null when it does not match any standard size. */

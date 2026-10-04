@@ -1,7 +1,13 @@
 import type { Homography, Point } from "./homography";
 import init, * as core from "./keycore-wasm/keycore.js";
-import type { Size } from "./keyspace";
-import type { DetectedKey } from "./keystrip";
+import type { Bar, Size } from "./keyspace";
+
+export type DetectedKey = {
+  readonly bar: Bar;
+  readonly black: boolean;
+  /** Semitones above the board's first white key, which is what maps a MIDI note onto it. */
+  readonly semitone: number;
+};
 
 export type ScoredPoint = Point & { readonly score: number };
 
@@ -101,6 +107,59 @@ export function keyNetFaces(fit: KeyNetFit): DetectedKey[] {
       new Float64Array(fit.lift ?? [0, 0, 0]),
     ),
   );
+}
+
+function signedArea(points: readonly Point[]): number {
+  let twice = 0;
+  points.forEach((p, i) => {
+    const q = points[(i + 1) % points.length];
+    twice += p.x * q.y - q.x * p.y;
+  });
+  return twice / 2;
+}
+
+/** The convex hull of `points`, by the monotone chain. */
+function convexHull(points: readonly Point[]): Point[] {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: Point, a: Point, b: Point): number =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const half = (list: readonly Point[]): Point[] => {
+    const out: Point[] = [];
+    for (const p of list) {
+      while (
+        out.length >= 2 &&
+        cross(out[out.length - 2], out[out.length - 1], p) <= 0
+      ) {
+        out.pop();
+      }
+      out.push(p);
+    }
+    return out.slice(0, -1);
+  };
+  return [...half(sorted), ...half([...sorted].reverse())];
+}
+
+/** The outline of a black key's top and front faces together, starting at the top's first
+ * corner and wound the same way, so each point of it is the same spot of the key every frame. */
+export function keyHull(
+  top: readonly Point[],
+  front: readonly Point[],
+): Point[] {
+  const hull = convexHull([...top, ...front]);
+  const wound =
+    Math.sign(signedArea(hull)) === Math.sign(signedArea(top))
+      ? hull
+      : [...hull].reverse();
+  let start = 0;
+  wound.forEach((p, i) => {
+    if (
+      Math.hypot(p.x - top[0].x, p.y - top[0].y) <
+      Math.hypot(wound[start].x - top[0].x, wound[start].y - top[0].y)
+    ) {
+      start = i;
+    }
+  });
+  return [...wound.slice(start), ...wound.slice(0, start)];
 }
 
 export function decodeHeatmaps(

@@ -2,81 +2,37 @@ import type {
   HandLandmarkerResult,
   ImageSegmenterResult,
 } from "@mediapipe/tasks-vision";
-import { createBoardReader } from "./boardreader";
-import { type Calibration, type Corners, createCalibration } from "./calibrate";
 import {
-  createDetector,
-  type Detection,
-  type Detector,
-  INPUT_SIZE,
-  MODEL_URL,
-} from "./detector";
-import { drawHands, drawKeys, drawModelInput, drawQuad } from "./draw";
+  type Calibration,
+  type Corners,
+  canonicalQuad,
+  createCalibration,
+} from "./calibrate";
+import { drawHands, drawKeys, drawQuad } from "./draw";
 import { createEffects, lowestPitchFor } from "./effects";
-import { createFollower } from "./follow";
 import { createHandTracker, type HandTracker } from "./hands";
 import type { Point } from "./homography";
 import { createHud, type Hud } from "./hud";
-import { type KeyNetFit, keyNetFaces } from "./keycore";
-import { createKeyMatcher, KEYMATCH_URL, type KeyMatcher } from "./keymatch";
+import {
+  type DetectedKey,
+  type KeyNetFit,
+  keyHull,
+  keyNetFaces,
+} from "./keycore";
 import { createKeyNet, KEYNET_URL, type KeyNetRunner } from "./keynetrunner";
 import { createKeyNetSession } from "./keynetsession";
-import {
-  createKeySegmenter,
-  createKeySnap,
-  KEYSEG_URL,
-  type KeyRegion,
-  type KeySegmenter,
-  keyHull,
-} from "./keyseg";
-import { keybedSpace } from "./keyspace";
-import {
-  createKeyReader,
-  type DetectedKey,
-  type FarEdge,
-  type KeyRead,
-  outlineQuad,
-  projectKeyFaces,
-  TRUSTED_READ,
-  trimFarEdge,
-} from "./keystrip";
 import { createLab } from "./lab";
-import { createLabeller } from "./labeller";
-import { depthInKeyWidths } from "./measure";
 import {
   createOcclusionMask,
   drawOcclusion,
   type OcclusionMask,
 } from "./occlusion";
-import { canonicalQuad, setCameraFocal, setKeybedDepth } from "./pose";
-import {
-  createTracker,
-  type Measured,
-  type Reading,
-  readsToHold,
-  type TrackerState,
-} from "./tracker";
 import { viteAssets } from "./viteassets";
 
 declare global {
   interface Window {
-    // the tracker's own frozen corners next to what the follower drew from them, for the lab
-    // to read off how far one has drifted from the other
-    pianocvHeldQuad?: Point[];
-    pianocvFollowedQuad?: Point[];
-    // what the live segmenter last found, for the lab to read off a live page
-    pianocvLiveKeys?: {
-      readonly outline: Point[] | null;
-      readonly regions: readonly KeyRegion[];
-      readonly current: boolean;
-    };
-    // the keys drawn this frame, and the template they were snapped from, as frame fractions
+    // the keys drawn this frame, as frame fractions
     pianocvDrawnKeys?: readonly DrawnKey[];
-    pianocvTemplateKeys?: readonly DrawnKey[];
-    // the template's faces before they were merged, which is what a training label is made of
-    pianocvKeyFaces?: readonly DetectedKey[];
-    // the hands found in the latest frame, so a training label can leave their pixels out
-    pianocvHands?: HandLandmarkerResult | null;
   }
 }
 
@@ -87,17 +43,6 @@ function modelUrl(file: string): string {
 
 const MANUAL_COLOR = "rgba(56,189,248,0.9)";
 const AUTO_COLOR = "#4ade80";
-const MODEL_VIEW_PX = 216;
-const OUTLINE_EASE = 0.3;
-// a corner moving this far in one read is the keyboard moving, so we follow it at once
-const OUTLINE_JUMP = 0.04;
-const DEPTH_KEY = "pianocv.keybedDepthUnits.v2";
-const FOCAL_KEY = "pianocv.cameraFocalFraction.v2";
-// ?engine=keynet swaps the whole detector/tracker/reader/matcher/segmenter pipeline for the
-// single KeyNet model, so the two can be compared side by side without running both at once
-const KEYNET_ENGINE =
-  new URLSearchParams(location.search).get("engine") === "keynet";
-
 function createVideo(): HTMLVideoElement {
   const video = document.createElement("video");
   video.muted = true;
@@ -172,30 +117,6 @@ function videoBox(
   return { x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, w, h };
 }
 
-// what the HUD's status line says about the tracker: reading progress while it hunts, held
-// once corners are fixed, or the reason it gave up
-function trackerStatusText(state: TrackerState): string {
-  if (state.kind === "hunting") {
-    return `reading ${state.progress.agreed}/${readsToHold}`;
-  }
-  if (state.kind === "held") {
-    return state.byHand ? "held (hand-placed)" : "held";
-  }
-  return `lost: ${state.reason}`;
-}
-
-// what the HUD's status line says about the keys found in the rectified strip: how many white
-// keys and how sure of it, or why it is still unsure, once it has had a look at the held keybed
-function keyStatusText(read: KeyRead | null): string {
-  if (read === null) {
-    return "reading";
-  }
-  if (read.kind === "unsure") {
-    return read.reason;
-  }
-  return `${read.whiteKeys} white keys from ${read.phase}, confidence ${(read.confidence * 100).toFixed(0)}%, black keys ${read.blackRaiseMm} mm up, strip ${read.stripKeys.toFixed(1)} keys wide`;
-}
-
 // what the HUD's "keynet" status line says: hunting for a keyboard, or the board it tracks and
 // whether the black keys' tops are used
 function keynetStatusText(fit: KeyNetFit | null): string {
@@ -206,32 +127,11 @@ function keynetStatusText(fit: KeyNetFit | null): string {
   return `tracking ${fit.whiteKeys} white keys from ${fit.phase}, ${tops}`;
 }
 
-// the template draws a black key as its raised top and its front face; to match it against one
-// segmented key we take the outline of both
 type DrawnKey = {
   readonly black: boolean;
   readonly semitone: number;
   readonly bar: readonly Point[];
 };
-
-function easedOutline(
-  previous: readonly Point[] | null,
-  next: readonly Point[] | null,
-): Point[] | null {
-  if (next === null || previous === null || previous.length !== next.length) {
-    return next === null ? null : [...next];
-  }
-  const jumped = next.some(
-    (p, i) =>
-      Math.hypot(p.x - previous[i].x, p.y - previous[i].y) > OUTLINE_JUMP,
-  );
-  return jumped
-    ? [...next]
-    : next.map((p, i) => ({
-        x: previous[i].x + (p.x - previous[i].x) * OUTLINE_EASE,
-        y: previous[i].y + (p.y - previous[i].y) * OUTLINE_EASE,
-      }));
-}
 
 function oneFacePerKey(faces: readonly DetectedKey[]): DrawnKey[] {
   const keys: DrawnKey[] = [];
@@ -258,92 +158,17 @@ function startLoop(
   ctx: CanvasRenderingContext2D,
   calibration: Calibration,
   hud: Hud,
-  detector: Detector | null,
   handTracker: HandTracker | null,
   occlusionMask: OcclusionMask | null,
-  keyMatcher: KeyMatcher | null,
-  keySegmenter: KeySegmenter | null,
   keyNet: KeyNetRunner | null,
 ): () => Corners {
   let hands: HandLandmarkerResult | null = null;
   let lastVideoTime = -1;
   let segmented: ImageSegmenterResult | null = null;
   let lastSegmentVideoTime = -1;
-  // kept only so the "input" HUD toggle can still show the model's own view; the tracker
-  // itself never exposes a detection's raw gray image
-  let lastDetection: Detection | null = null;
   const effects = createEffects();
   const keyNetSession = keyNet ? createKeyNetSession(keyNet) : null;
 
-  const remember = (key: string, value: number): void => {
-    try {
-      localStorage.setItem(key, String(value));
-    } catch {
-      // storage can be blocked; the measurement holds for this session
-    }
-  };
-  try {
-    const depth = localStorage.getItem(DEPTH_KEY);
-    if (depth) {
-      setKeybedDepth(Number(depth));
-    }
-    const focal = localStorage.getItem(FOCAL_KEY);
-    if (focal) {
-      setCameraFocal(Number(focal));
-    }
-  } catch {
-    // storage can be blocked; the defaults stand
-  }
-
-  const onMeasured = (measured: Measured): void => {
-    if (measured.kind === "depth") {
-      remember(DEPTH_KEY, measured.units);
-      hud.status(
-        "keybed",
-        `shape measured: ${depthInKeyWidths(measured.units).toFixed(2)} key widths per depth`,
-      );
-      return;
-    }
-    remember(FOCAL_KEY, measured.fraction);
-    hud.status(
-      "keybed",
-      `lens measured: focal ${measured.fraction.toFixed(2)} of the frame width`,
-    );
-  };
-  const capturing: Detector | null = detector && {
-    detect: async (frame) => {
-      const detection = await detector.detect(frame);
-      lastDetection = detection;
-      return detection;
-    },
-    reset: () => detector.reset(),
-  };
-  const tracker = capturing ? createTracker(capturing, { onMeasured }) : null;
-  const boardReader = createBoardReader();
-  const keyReader = createKeyReader(keyMatcher, keySegmenter);
-  const labeller = createLabeller();
-  const follower = createFollower();
-  let boardHeld: TrackerState | null = null;
-  // identity of the held state and the last detection read, so a fresh model confirmation
-  // (a new hold, or the same hold re-verified) is what resets the follower, not every frame
-  let followedFrom: TrackerState | null = null;
-  let followedReading: Reading | null = null;
-  type Followed = { kind: "held"; quad: Point[]; byHand: boolean };
-  let labelState: Followed | null = null;
-  // the keybed outline the segmenter found on the latest frame it finished, which the keys are
-  // drawn on so they follow the real keyboard every frame
-  let liveOutline: Point[] | null = null;
-  let liveRegions: readonly KeyRegion[] = [];
-  const keySnap = createKeySnap();
-  let segmenting = false;
-
-  hud.onRedetect(() => tracker?.release());
-  hud.onAdopt(() => {
-    const state = tracker?.state();
-    if (state?.kind === "held") {
-      calibration.setCorners(state.quad);
-    }
-  });
   // the corners are often placed perfectly but a half turn out, which reads as front and back
   // swapped; rolling by two relabels the same rectangle rather than making it be dragged again
   hud.onFlip(() => {
@@ -352,21 +177,14 @@ function startLoop(
   });
 
   // the dragged corners mean what was dragged: handle 1 to 2 runs along the black keys,
-  // and the flip button is how the back is swapped. Deciding the back from the picture
-  // every frame made the handles jump between the two orders on their own.
+  // and the flip button is how the back is swapped
   const orientedManual = (): Corners =>
     canonicalQuad(calibration.getCorners()) as Corners;
 
-  hud.onMeasure(() => tracker?.hold(orientedManual()));
-
   const frame = (now: number): void => {
-    if (hud.state.live) {
-      void tracker?.look(video, now);
-    }
     if (handTracker && hud.state.hands && video.currentTime !== lastVideoTime) {
       lastVideoTime = video.currentTime;
       hands = handTracker.detect(video, now);
-      window.pianocvHands = hands;
     }
     if (
       occlusionMask &&
@@ -386,155 +204,38 @@ function startLoop(
 
     ctx.save();
     ctx.translate(box.x, box.y);
-    const state = tracker?.state();
-    let trimmed: FarEdge | null = null;
-    if (KEYNET_ENGINE) {
-      const size = { width: video.videoWidth, height: video.videoHeight };
-      if (keyNetSession && size.width > 0 && size.height > 0) {
-        void keyNetSession.step(video, size, now).catch(() => null);
-      }
-      const keynetFit = keyNetSession?.fit() ?? null;
-      if (keynetFit) {
-        drawQuad(ctx, [...keynetFit.quad], box.w, box.h, AUTO_COLOR, "keybed");
-        const keys = oneFacePerKey(keyNetFaces(keynetFit));
-        window.pianocvDrawnKeys = keys;
-        window.pianocvTemplateKeys = keys;
-        if (hud.state.keys) {
-          drawKeys(ctx, keys, box.w, box.h);
-        }
-      } else {
-        window.pianocvDrawnKeys = undefined;
-        window.pianocvTemplateKeys = undefined;
-      }
-      hud.status(
-        "keynet",
-        keyNet
-          ? `${keyNet.backend}, ${keynetStatusText(keynetFit)}`
-          : "unavailable",
-      );
-    } else if (state?.kind === "held") {
-      const size = { width: video.videoWidth, height: video.videoHeight };
-      const reading = tracker?.reading() ?? null;
-      // a fresh labelState object marks a new hold for the labeller's own session
-      // bookkeeping; a mere reconfirmation of the same hold must not look like a new one,
-      // so it only ever updates the existing object's quad in place
-      const isNewHold = state !== followedFrom;
-      if (isNewHold) {
-        followedFrom = state;
-        labelState = {
-          kind: "held",
-          quad: [...state.quad],
-          byHand: state.byHand,
-        };
-      }
-      if (state !== boardHeld) {
-        boardHeld = state;
-        boardReader.moved(now);
-        keyReader.moved(now);
-        liveOutline = null;
-        liveRegions = [];
-        keySnap.reset();
-      }
-      const space = keybedSpace({ quad: state.quad }, size);
-      if (space) {
-        boardReader.look(space, video, size, now);
-      }
-      keyReader.look(video, state.quad, size, now);
-      if (isNewHold || reading !== followedReading) {
-        follower.reset(state.quad, video, size);
-        followedReading = reading;
-        if (labelState) {
-          labelState.quad = [...state.quad];
-        }
-      } else if (labelState) {
-        const moved = follower.update(video, size);
-        if (moved) {
-          labelState.quad = [...moved];
-        }
-      }
-      // the far edge the model (or a hand) drew reaches into the case; the key detector already
-      // measured how far, so drawing, key projection and auto-labelling all trim onto the keys
-      trimmed = keyReader.fraction();
-      if (labelState && trimmed !== null) {
-        labelState.quad = trimFarEdge(labelState.quad, trimmed);
-      }
-      hud.status(
-        "trim",
-        trimmed === null
-          ? "keep still to measure"
-          : `${(trimmed.left * 100).toFixed(0)}% · ${(trimmed.right * 100).toFixed(0)}%`,
-      );
-      hud.status(
-        "follow",
-        `${(window.pianocvFollowMs?.at(-1) ?? 0).toFixed(2)} ms`,
-      );
-      window.pianocvHeldQuad = state.quad;
-      window.pianocvFollowedQuad = labelState?.quad ?? state.quad;
-      const found = keyReader.last();
-      const followed = labelState?.quad ?? state.quad;
-      drawQuad(
-        ctx,
-        liveOutline ??
-          (found?.kind === "read"
-            ? outlineQuad(followed, found.outline)
-            : followed),
-        box.w,
-        box.h,
-        AUTO_COLOR,
-        "keybed",
-      );
-      const trusted =
-        found?.kind === "read" && found.confidence >= TRUSTED_READ
-          ? found
-          : null;
-      if (keySegmenter && trusted && !segmenting) {
-        segmenting = true;
-        const heldAt = state;
-        void keySegmenter
-          .segment(video, size, followed)
-          .catch(() => null)
-          .then((found) => {
-            segmenting = false;
-            if (boardHeld === heldAt) {
-              liveOutline = easedOutline(liveOutline, found?.outline ?? null);
-              liveRegions = found?.regions ?? [];
-            }
-            window.pianocvLiveKeys = {
-              outline: liveOutline,
-              regions: liveRegions,
-              current: boardHeld === heldAt,
-            };
-          });
-      }
-      const faces =
-        trusted && (hud.state.keys || hud.state.glow)
-          ? projectKeyFaces(trusted, followed, size)
-          : [];
-      window.pianocvKeyFaces = faces;
-      const template = oneFacePerKey(faces);
-      window.pianocvTemplateKeys = template;
-      const keys = liveOutline
-        ? keySnap.apply(template, liveRegions, size.width / size.height)
-        : template;
+    const size = { width: video.videoWidth, height: video.videoHeight };
+    if (keyNetSession && size.width > 0 && size.height > 0) {
+      void keyNetSession.step(video, size, now).catch(() => null);
+    }
+    const fit = keyNetSession?.fit() ?? null;
+    if (fit) {
+      drawQuad(ctx, [...fit.quad], box.w, box.h, AUTO_COLOR, "keybed");
+      const keys = oneFacePerKey(keyNetFaces(fit));
       window.pianocvDrawnKeys = keys;
       if (hud.state.keys) {
         drawKeys(ctx, keys, box.w, box.h);
       }
       if (hud.state.glow) {
-        const lowest = trusted
-          ? lowestPitchFor(trusted.whiteKeys, trusted.phase)
-          : null;
-        effects.draw(ctx, keys, lowest, box.w, box.h, now);
+        effects.draw(
+          ctx,
+          keys,
+          lowestPitchFor(fit.whiteKeys, fit.phase),
+          box.w,
+          box.h,
+          now,
+        );
         if (segmented) {
           drawOcclusion(ctx, video, segmented, box.w, box.h);
         }
       }
     } else {
-      boardHeld = null;
-      followedFrom = null;
-      followedReading = null;
-      labelState = null;
+      window.pianocvDrawnKeys = undefined;
     }
+    hud.status(
+      "keynet",
+      keyNet ? `${keyNet.backend}, ${keynetStatusText(fit)}` : "unavailable",
+    );
     if (hud.state.corners) {
       drawQuad(ctx, orientedManual(), box.w, box.h, MANUAL_COLOR, "manual");
       calibration.draw(ctx, box.w, box.h);
@@ -543,40 +244,6 @@ function startLoop(
       drawHands(ctx, hands, box.w, box.h);
     }
     ctx.restore();
-
-    if (hud.state.input && lastDetection?.quad && lastDetection.inputQuad) {
-      drawModelInput(
-        ctx,
-        lastDetection.gray,
-        INPUT_SIZE,
-        lastDetection.inputQuad,
-        MODEL_VIEW_PX,
-      );
-    }
-
-    if (state) {
-      const reading = tracker?.reading() ?? null;
-      hud.status(
-        "detect",
-        reading ? `${reading.latencyMs.toFixed(1)} ms` : "waiting",
-      );
-      hud.status("keybed", trackerStatusText(state));
-      if (state.kind === "held") {
-        hud.status("board", keyStatusText(keyReader.last()));
-      }
-      hud.status("label", `${labeller.saved()} saved`);
-      // a label is only worth saving once the far edge has been measured onto the keys; until
-      // then the corners still reach into the case, and a wrong label outlives the session
-      if (state.kind !== "held" || trimmed !== null) {
-        labeller.look(
-          video,
-          state.kind === "held" ? (labelState ?? state) : state,
-          boardReader.last(),
-          hud.state.label,
-          now,
-        );
-      }
-    }
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
@@ -600,80 +267,26 @@ async function boot(): Promise<void> {
 
   try {
     const hud = createHud();
-    // engine=keynet replaces the whole detector/matcher/segmenter pipeline, so there is no
-    // point loading any of it
-    if (!KEYNET_ENGINE) {
-      hud.status("model", "loading");
-    }
-    const loading = KEYNET_ENGINE
-      ? Promise.resolve(null)
-      : createDetector(viteAssets, modelUrl(MODEL_URL)).then(
-          (detector) => {
-            hud.status("model", `ready on ${detector.backend}`);
-            return detector;
-          },
-          (err: unknown) => {
-            hud.status("model", `unavailable (${errorMessage(err)})`);
-            return null;
-          },
-        );
-    const occlusionLoading = KEYNET_ENGINE
-      ? Promise.resolve(null)
-      : createOcclusionMask(viteAssets).then(
-          (mask) => {
-            hud.status("glow", "play a key to light it");
-            return mask;
-          },
-          () => {
-            hud.status("glow", "occlusion unavailable, glow draws over hands");
-            return null;
-          },
-        );
-    const matcherLoading = KEYNET_ENGINE
-      ? Promise.resolve(null)
-      : createKeyMatcher(viteAssets, modelUrl(KEYMATCH_URL)).then(
-          (matcher) => {
-            hud.status("keys", `matcher ready on ${matcher.backend}`);
-            return matcher;
-          },
-          () => {
-            hud.status(
-              "keys",
-              "matcher unavailable, reading keys by brightness",
-            );
-            return null;
-          },
-        );
-    const segmenterLoading = KEYNET_ENGINE
-      ? Promise.resolve(null)
-      : createKeySegmenter(viteAssets, modelUrl(KEYSEG_URL)).then(
-          (segmenter) => {
-            hud.status(
-              "outline",
-              `key segmenter ready on ${segmenter.backend}`,
-            );
-            return segmenter;
-          },
-          () => {
-            hud.status(
-              "outline",
-              "key segmenter unavailable, keys read on the mask outline",
-            );
-            return null;
-          },
-        );
-    const keyNetLoading = KEYNET_ENGINE
-      ? createKeyNet(viteAssets, modelUrl(KEYNET_URL)).then(
-          (runner) => {
-            hud.status("keynet", `keynet ready on ${runner.backend}`);
-            return runner;
-          },
-          () => {
-            hud.status("keynet", "keynet unavailable");
-            return null;
-          },
-        )
-      : Promise.resolve(null);
+    const occlusionLoading = createOcclusionMask(viteAssets).then(
+      (mask) => {
+        hud.status("glow", "play a key to light it");
+        return mask;
+      },
+      () => {
+        hud.status("glow", "occlusion unavailable, glow draws over hands");
+        return null;
+      },
+    );
+    const keyNetLoading = createKeyNet(viteAssets, modelUrl(KEYNET_URL)).then(
+      (runner) => {
+        hud.status("keynet", `keynet ready on ${runner.backend}`);
+        return runner;
+      },
+      () => {
+        hud.status("keynet", "keynet unavailable");
+        return null;
+      },
+    );
     await startCamera(video);
     const ctx = canvas.getContext("2d");
     if (!ctx) {
@@ -701,11 +314,8 @@ async function boot(): Promise<void> {
       ctx,
       calibration,
       hud,
-      await loading,
       handTracker,
       occlusionMask,
-      await matcherLoading,
-      await segmenterLoading,
       await keyNetLoading,
     );
     const stream = video.srcObject;

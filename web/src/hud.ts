@@ -1,9 +1,6 @@
 export interface HudState {
-  live: boolean;
   corners: boolean;
   hands: boolean;
-  input: boolean;
-  label: boolean;
   keys: boolean;
   glow: boolean;
 }
@@ -12,10 +9,7 @@ export interface Hud {
   readonly state: HudState;
   readonly capture: HTMLElement;
   status(key: string, value: string): void;
-  onRedetect(handler: () => void): void;
-  onAdopt(handler: () => void): void;
   onFlip(handler: () => void): void;
-  onMeasure(handler: () => void): void;
 }
 
 const PANEL_STYLE: Partial<CSSStyleDeclaration> = {
@@ -76,20 +70,16 @@ function row(parent: HTMLElement, label: string): HTMLElement {
 }
 
 export function createHud(): Hud {
-  // auto-labelling stays off: it writes pictures of whatever the camera sees to disk
   const state: HudState = {
-    live: true,
     corners: false,
     hands: false,
-    input: false,
-    label: false,
     keys: false,
     glow: false,
   };
   const panel = document.createElement("div");
   Object.assign(panel.style, PANEL_STYLE);
 
-  const detectRow = row(panel, "detect");
+  const viewRow = row(panel, "show");
   const capture = row(panel, "capture");
 
   const readouts = document.createElement("div");
@@ -143,16 +133,7 @@ export function createHud(): Hud {
   };
 
   toggle(
-    detectRow,
-    "live",
-    "keep detecting every frame",
-    () => state.live,
-    (on) => {
-      state.live = on;
-    },
-  );
-  toggle(
-    detectRow,
+    viewRow,
     "manual",
     "drag the four corners onto the keybed yourself",
     () => state.corners,
@@ -161,7 +142,7 @@ export function createHud(): Hud {
     },
   );
   toggle(
-    detectRow,
+    viewRow,
     "hands",
     "overlay mediapipe hand landmarks",
     () => state.hands,
@@ -170,16 +151,7 @@ export function createHud(): Hud {
     },
   );
   toggle(
-    detectRow,
-    "input",
-    "show the image the model actually sees",
-    () => state.input,
-    (on) => {
-      state.input = on;
-    },
-  );
-  toggle(
-    detectRow,
+    viewRow,
     "keys",
     "draw the detected keys over the video",
     () => state.keys,
@@ -188,7 +160,7 @@ export function createHud(): Hud {
     },
   );
   toggle(
-    detectRow,
+    viewRow,
     "glow",
     "light the key each note plays",
     () => state.glow,
@@ -197,28 +169,6 @@ export function createHud(): Hud {
     },
   );
 
-  toggle(
-    capture,
-    "label",
-    "save held frames as training labels",
-    () => state.label,
-    (on) => {
-      state.label = on;
-    },
-  );
-
-  const redetect = document.createElement("button");
-  redetect.textContent = "detect again";
-  redetect.title = "give up on the current keybed and start hunting again";
-  styleButton(redetect);
-  detectRow.appendChild(redetect);
-
-  const adopt = document.createElement("button");
-  adopt.textContent = "adopt";
-  adopt.title = "copy the held rectangle into the draggable corners";
-  styleButton(adopt);
-  capture.appendChild(adopt);
-
   const flip = document.createElement("button");
   flip.textContent = "flip";
   flip.title =
@@ -226,28 +176,12 @@ export function createHud(): Hud {
   styleButton(flip);
   capture.appendChild(flip);
 
-  const measure = document.createElement("button");
-  measure.textContent = "hold";
-  measure.title =
-    "hold the dragged corners as the keybed, measuring its shape or lens along the way";
-  styleButton(measure);
-  capture.appendChild(measure);
-
   const shortcuts: Record<string, () => void> = {
-    l: () => {
-      state.live = !state.live;
-    },
     c: () => {
       state.corners = !state.corners;
     },
     h: () => {
       state.hands = !state.hands;
-    },
-    i: () => {
-      state.input = !state.input;
-    },
-    a: () => {
-      state.label = !state.label;
     },
     k: () => {
       state.keys = !state.keys;
@@ -272,9 +206,6 @@ export function createHud(): Hud {
     state,
     capture,
     status,
-    onRedetect: (handler) => redetect.addEventListener("click", handler),
-    onAdopt: (handler) => adopt.addEventListener("click", handler),
     onFlip: (handler) => flip.addEventListener("click", handler),
-    onMeasure: (handler) => measure.addEventListener("click", handler),
   };
 }

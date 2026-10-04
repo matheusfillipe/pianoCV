@@ -1,6 +1,4 @@
 import type { Point } from "./homography";
-import { nearestOnOutline, outlinePoints } from "./keyseg";
-import { otsu } from "./keystrip";
 
 /** How still and how well placed the drawn keys are on a live page, for the lab: the camera of
  * a recording does not move, so any motion of a drawn key is the pipeline's own. */
@@ -17,19 +15,9 @@ export type Steadiness = {
   /** How far each key's centre wanders around its own mean, in video pixels. */
   readonly swingPxMedian: number | null;
   readonly swingPxP95: number | null;
-  /** How well each drawn black key overlaps the black key the segmenter found under it, over
-   * the keys the segmenter found on their own. */
-  readonly blackIoUMedian: number | null;
-  readonly blackIoUP10: number | null;
-  /** The same overlap for the template keys before they were snapped. */
-  readonly templateIoUMedian: number | null;
-  readonly templateIoUP10: number | null;
-  /** The share of black keys the segmenter found on their own, unmerged. */
-  readonly blackSingleShare: number | null;
-  /** For the drawn keys and the template they were snapped from, the share of each black key
-   * that is dark in the video and of the white keys' visible surface that is bright, split at
-   * the keybed's own Otsu threshold. */
-  readonly fit: Readonly<Record<string, FitSummary>>;
+  /** The share of each black key that is dark in the video and of the white keys' visible surface
+   * that is bright, split at the keybed's own Otsu threshold. */
+  readonly fit: FitSummary;
 };
 
 type FitSummary = {
@@ -45,15 +33,94 @@ type Drawn = {
 };
 
 const RASTER_SCALE = 2;
-const IOU_EVERY = 20;
+const FIT_EVERY = 20;
 const EVEN_POINTS = 40;
-// a region this much bigger than the key holds several keys, as snapKeys judges it
-const ONE_KEY_MOST_AREA = 1.6;
 
 const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 const nextFrame = (): Promise<number> =>
   new Promise((resolve) => requestAnimationFrame(resolve));
+
+function otsu(values: readonly number[]): number {
+  const histogram = new Array<number>(256).fill(0);
+  for (const v of values) {
+    histogram[Math.min(255, Math.max(0, Math.round(v)))] += 1;
+  }
+  const total = values.length;
+  const sum = histogram.reduce((s, count, level) => s + count * level, 0);
+  let below = 0;
+  let belowSum = 0;
+  let best = 0;
+  let threshold = 128;
+  for (let level = 0; level < 256; level += 1) {
+    below += histogram[level];
+    if (below === 0 || below === total) {
+      continue;
+    }
+    belowSum += histogram[level] * level;
+    const above = total - below;
+    const between =
+      below * above * (belowSum / below - (sum - belowSum) / above) ** 2;
+    if (between > best) {
+      best = between;
+      threshold = level;
+    }
+  }
+  return threshold;
+}
+
+function nearestOnOutline(p: Point, outline: readonly Point[]): Point {
+  let best = p;
+  let bestDistance = Infinity;
+  outline.forEach((a, i) => {
+    const b = outline[(i + 1) % outline.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length = dx * dx + dy * dy;
+    const t =
+      length === 0
+        ? 0
+        : Math.max(
+            0,
+            Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length),
+          );
+    const q = { x: a.x + dx * t, y: a.y + dy * t };
+    const distance = Math.hypot(q.x - p.x, q.y - p.y);
+    if (distance < bestDistance) {
+      best = q;
+      bestDistance = distance;
+    }
+  });
+  return best;
+}
+
+/** `count` points around a closed outline from its first corner: every corner, and the rest
+ * spread over the edges by their length. */
+function outlinePoints(bar: readonly Point[], count: number): Point[] {
+  const lengths = bar.map((p, i) => {
+    const q = bar[(i + 1) % bar.length];
+    return Math.hypot(q.x - p.x, q.y - p.y);
+  });
+  const perimeter = lengths.reduce((sum, l) => sum + l, 0);
+  const share = (l: number): number =>
+    perimeter === 0 ? 1 : 1 + ((count - bar.length) * l) / perimeter;
+  const shares = lengths.map((l) => Math.floor(share(l)));
+  const byLength = lengths
+    .map((l, i) => ({ i, rest: share(l) - Math.floor(share(l)) }))
+    .sort((x, y) => y.rest - x.rest || x.i - y.i);
+  for (let k = 0; shares.reduce((a, b) => a + b, 0) < count; k += 1) {
+    shares[byLength[k % byLength.length].i] += 1;
+  }
+  const points: Point[] = [];
+  bar.forEach((p, edge) => {
+    const q = bar[(edge + 1) % bar.length];
+    for (let j = 0; j < shares[edge]; j += 1) {
+      const t = j / shares[edge];
+      points.push({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+    }
+  });
+  return points;
+}
 
 function quantile(values: readonly number[], share: number): number | null {
   if (values.length === 0) {
@@ -98,32 +165,6 @@ function rasterise(
     }
   }
   return inside;
-}
-
-/** The overlap with the region sharing most pixels with the key, or null when that region is
- * missing or holds several keys the segmenter merged. */
-function singleOverlap(
-  drawn: Set<number>,
-  found: readonly Set<number>[],
-): number | null {
-  let most = 0;
-  let best: Set<number> | null = null;
-  for (const region of found) {
-    let shared = 0;
-    for (const i of drawn) {
-      if (region.has(i)) {
-        shared += 1;
-      }
-    }
-    if (shared > most) {
-      most = shared;
-      best = region;
-    }
-  }
-  if (best === null || best.size > drawn.size * ONE_KEY_MOST_AREA) {
-    return null;
-  }
-  return most / (drawn.size + best.size - most);
 }
 
 type PixelFit = {
@@ -199,13 +240,9 @@ export async function measureSteadiness(
   const picture = new OffscreenCanvas(canvas.width, canvas.height);
   const pictureCtx = picture.getContext("2d", { willReadFrequently: true });
   const luminance = new Float32Array(canvas.width * canvas.height);
-  const fits = new Map<string, { dark: number[]; bright: number[] }>();
+  const fit = { dark: [] as number[], bright: [] as number[] };
   const moves: number[] = [];
   const centres = new Map<string, Point[]>();
-  const overlaps: number[] = [];
-  const templateOverlaps: number[] = [];
-  let blackSeen = 0;
-  let blackSingle = 0;
   let previous: readonly Drawn[] | null = null;
   let frames = 0;
   let compared = 0;
@@ -249,7 +286,7 @@ export async function measureSteadiness(
       };
       centres.set(id(key), [...(centres.get(id(key)) ?? []), centre]);
     }
-    if (ctx && pictureCtx && video && frames % IOU_EVERY === 0) {
+    if (ctx && pictureCtx && video && frames % FIT_EVERY === 0) {
       pictureCtx.drawImage(video, 0, 0, picture.width, picture.height);
       const rgb = pictureCtx.getImageData(
         0,
@@ -261,36 +298,9 @@ export async function measureSteadiness(
         luminance[i] =
           0.299 * rgb[i * 4] + 0.587 * rgb[i * 4 + 1] + 0.114 * rgb[i * 4 + 2];
       }
-      const sets = { drawn: keys, template: window.pianocvTemplateKeys ?? [] };
-      for (const [name, set] of Object.entries(sets)) {
-        if (set.length === 0) {
-          continue;
-        }
-        const fit = pixelFit(ctx, luminance, set);
-        const into = fits.get(name) ?? { dark: [], bright: [] };
-        into.dark.push(...fit.blackDark);
-        into.bright.push(fit.whiteBright);
-        fits.set(name, into);
-      }
-      const found = (window.pianocvLiveKeys?.regions ?? [])
-        .filter((region) => region.black)
-        .map((region) => rasterise(ctx, region.bar));
-      for (const key of keys.filter((k) => k.black)) {
-        const overlap = singleOverlap(rasterise(ctx, key.bar), found);
-        blackSeen += 1;
-        if (overlap !== null) {
-          blackSingle += 1;
-          overlaps.push(overlap);
-        }
-      }
-      for (const key of (window.pianocvTemplateKeys ?? []).filter(
-        (k) => k.black,
-      )) {
-        const overlap = singleOverlap(rasterise(ctx, key.bar), found);
-        if (overlap !== null) {
-          templateOverlaps.push(overlap);
-        }
-      }
+      const measured = pixelFit(ctx, luminance, keys);
+      fit.dark.push(...measured.blackDark);
+      fit.bright.push(measured.whiteBright);
     }
     previous = keys;
     frames += 1;
@@ -312,22 +322,10 @@ export async function measureSteadiness(
     jumpyFrames: compared ? Math.round((jumpy / compared) * 1000) / 1000 : null,
     swingPxMedian: quantile(swing, 0.5),
     swingPxP95: quantile(swing, 0.95),
-    blackIoUMedian: quantile(overlaps, 0.5),
-    blackIoUP10: quantile(overlaps, 0.1),
-    templateIoUMedian: quantile(templateOverlaps, 0.5),
-    templateIoUP10: quantile(templateOverlaps, 0.1),
-    fit: Object.fromEntries(
-      [...fits].map(([name, { dark, bright }]) => [
-        name,
-        {
-          blackDarkMedian: quantile(dark, 0.5),
-          blackDarkP10: quantile(dark, 0.1),
-          whiteBright: quantile(bright, 0.5),
-        },
-      ]),
-    ),
-    blackSingleShare: blackSeen
-      ? Math.round((blackSingle / blackSeen) * 100) / 100
-      : null,
+    fit: {
+      blackDarkMedian: quantile(fit.dark, 0.5),
+      blackDarkP10: quantile(fit.dark, 0.1),
+      whiteBright: quantile(fit.bright, 0.5),
+    },
   };
 }

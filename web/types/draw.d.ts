@@ -11,5 +11,4 @@ export declare function tracePolygon(ctx: CanvasRenderingContext2D, bar: readonl
  * stops at the black keys' edges the way the keys themselves do. */
 export declare function outsideBlackKeys(ctx: CanvasRenderingContext2D, keys: readonly Key[], w: number, h: number, draw: () => void): void;
 export declare function drawKeys(ctx: CanvasRenderingContext2D, keys: readonly Key[], w: number, h: number): void;
-export declare function drawModelInput(ctx: CanvasRenderingContext2D, gray: Float32Array, size: number, quad: Point[], box: number): void;
 export {};

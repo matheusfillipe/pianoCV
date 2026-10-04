@@ -7,6 +7,18 @@ const HINT_TEXT = "drag corners onto the keyboard, press c to hide";
 
 export type Corners = [Point, Point, Point, Point];
 
+function edgeLength(quad: Point[], index: number): number {
+  return Math.hypot(quad[index].x - quad[0].x, quad[index].y - quad[0].y);
+}
+
+/** Rolls the quad so edge 0 to 1 is its longer side, which runs along the white keys. The
+ * remaining half turn is the dragger's choice: handle 1 to 2 runs along the black keys. */
+export function canonicalQuad(quad: Point[]): Point[] {
+  return edgeLength(quad, 1) >= edgeLength(quad, 3)
+    ? quad
+    : quad.map((_, i) => quad[(i + 1) % quad.length]);
+}
+
 export interface Box {
   x: number;
   y: number;

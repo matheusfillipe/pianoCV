@@ -21,11 +21,6 @@ export type RemoteModel = {
   readonly gpuFailure: string | null;
   readonly url: string;
   readonly worker: GpuWorker;
-  /** The model's first output for one float32 input, or null when it gave none. */
-  readonly run: (
-    input: Float32Array,
-    dims: readonly number[],
-  ) => Promise<Float32Array | null>;
 };
 
 // every model shares one worker, so they share one WebGPU device and one runtime
@@ -98,9 +93,5 @@ export async function openModel(
     gpuFailure: reply.gpuFailure,
     url: absolute,
     worker,
-    run: async (input, dims) => {
-      const ran = await worker.ask({ kind: "run", url: absolute, input, dims });
-      return ran.kind === "ran" ? ran.output : null;
-    },
   };
 }

@@ -1,21 +1,8 @@
-import { type Crop, type KeyRegion } from "./keyseg";
 export type GpuRequest = {
     readonly kind: "open";
     readonly id: number;
     readonly url: string;
     readonly wasm: string;
-} | {
-    readonly kind: "run";
-    readonly id: number;
-    readonly url: string;
-    readonly input: Float32Array;
-    readonly dims: readonly number[];
-} | {
-    readonly kind: "segment";
-    readonly id: number;
-    readonly url: string;
-    readonly frame: ImageBitmap;
-    readonly crop: Crop;
 } | {
     readonly kind: "keynet";
     readonly id: number;
@@ -34,21 +21,6 @@ export type GpuReply = {
     readonly kind: "failed";
     readonly id: number;
     readonly reason: string;
-} | {
-    readonly kind: "ran";
-    readonly id: number;
-    /** The model's first output, or null when it gave none. */
-    readonly output: Float32Array | null;
-} | {
-    readonly kind: "segmented";
-    readonly id: number;
-    /** The outline's corners in frame pixels, or null when too few key pixels were found. */
-    readonly corners: {
-        x: number;
-        y: number;
-    }[] | null;
-    /** Every key region, in frame pixels. */
-    readonly regions: KeyRegion[];
 } | {
     readonly kind: "keynetresult";
     readonly id: number;

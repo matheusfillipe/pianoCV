@@ -13,19 +13,9 @@ export type Steadiness = {
     /** How far each key's centre wanders around its own mean, in video pixels. */
     readonly swingPxMedian: number | null;
     readonly swingPxP95: number | null;
-    /** How well each drawn black key overlaps the black key the segmenter found under it, over
-     * the keys the segmenter found on their own. */
-    readonly blackIoUMedian: number | null;
-    readonly blackIoUP10: number | null;
-    /** The same overlap for the template keys before they were snapped. */
-    readonly templateIoUMedian: number | null;
-    readonly templateIoUP10: number | null;
-    /** The share of black keys the segmenter found on their own, unmerged. */
-    readonly blackSingleShare: number | null;
-    /** For the drawn keys and the template they were snapped from, the share of each black key
-     * that is dark in the video and of the white keys' visible surface that is bright, split at
-     * the keybed's own Otsu threshold. */
-    readonly fit: Readonly<Record<string, FitSummary>>;
+    /** The share of each black key that is dark in the video and of the white keys' visible surface
+     * that is bright, split at the keybed's own Otsu threshold. */
+    readonly fit: FitSummary;
 };
 type FitSummary = {
     readonly blackDarkMedian: number | null;
