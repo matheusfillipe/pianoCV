@@ -93,6 +93,16 @@ pub fn key_units(pitch: i32) -> KeyUnits {
     }
 }
 
+/// The lowest MIDI pitch of a standard board, or `None` for any other size or starting letter.
+pub fn lowest_pitch(white_keys: usize, phase: Phase) -> Option<i32> {
+    match (white_keys, phase) {
+        (29 | 36, Phase::C) => Some(36),
+        (45, Phase::E) => Some(28),
+        (52, Phase::A) => Some(21),
+        _ => None,
+    }
+}
+
 fn first_white_pitch(phase: Phase) -> i32 {
     TEMPLATE_OCTAVE + phase.pitch_class()
 }

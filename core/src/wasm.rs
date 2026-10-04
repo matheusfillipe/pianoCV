@@ -157,14 +157,11 @@ pub fn prepare_input(
     width: u32,
     height: u32,
 ) -> Result<Vec<f32>, JsError> {
-    let mut to_pixels = matrix(to_frame)?;
-    for (i, value) in to_pixels.iter_mut().enumerate() {
-        match i / 3 {
-            0 => *value *= f64::from(pixel_width),
-            1 => *value *= f64::from(pixel_height),
-            _ => {}
-        }
-    }
+    let to_pixels = input::fractions_to_pixels(
+        &matrix(to_frame)?,
+        f64::from(pixel_width),
+        f64::from(pixel_height),
+    );
     let (pixel_width, pixel_height) = (pixel_width as usize, pixel_height as usize);
     if rgba.len() != pixel_width * pixel_height * 4 {
         return Err(JsError::new("the pixels are not width by height RGBA"));

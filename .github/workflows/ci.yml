@@ -29,4 +29,5 @@ jobs:
         with:
           tool: wasm-pack
       - run: make install
+      - run: make model
       - run: make quality

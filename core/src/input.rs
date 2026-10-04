@@ -35,6 +35,19 @@ impl Pixels<'_> {
     }
 }
 
+/// Turns a matrix that outputs frame fractions into one that outputs frame pixels.
+pub fn fractions_to_pixels(to_fraction: &Homography, width: f64, height: f64) -> Homography {
+    let mut to_pixels = *to_fraction;
+    for (i, value) in to_pixels.iter_mut().enumerate() {
+        match i / 3 {
+            0 => *value *= width,
+            1 => *value *= height,
+            _ => {}
+        }
+    }
+    to_pixels
+}
+
 /// The model input for a crop: `to_frame` maps a crop pixel to a frame pixel (both with whole
 /// numbers on pixel centres, any 3x3 so perspective crops work). The result is ImageNet
 /// normalised NCHW float32 with a black border where the crop leaves the frame. We take one

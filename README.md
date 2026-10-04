@@ -23,6 +23,19 @@ It was trained with [PyTorch](https://pytorch.org) on thousands of fake pianos r
 [MediaPipe](https://ai.google.dev/edge/mediapipe) so the glow stays behind them, and the
 notes come in through [Web MIDI](https://developer.mozilla.org/docs/Web/API/Web_MIDI_API).
 
+## Use it natively
+
+The same Rust core that runs in the browser as WebAssembly can also run natively on your machine.
+Feed it a camera frame in RGBA and it returns every key with its note and outline.
+Try it on a video with:
+
+```
+make model
+make core-demo ARGS="path/to/video.mp4 path/to/output"
+```
+
+This needs ffmpeg, the model from `make model`, and a Rust toolchain.
+
 ## The model
 
 The trained weights are on Hugging Face at

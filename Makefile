@@ -9,7 +9,7 @@ PORT ?= 5274
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit tools-upgrade \
         build web-typecheck web-types web-lint web-fix web-test web-build dev dev-alt model site publish-models clean \
         lab-keymatch-push lab-keynet-push lab-keynet-train lab-keynet-eval lab-keynet-fp16 lab-mlflow-log \
-        core-lint core-test core-wasm core-fix
+        core-lint core-test core-native-test core-demo core-wasm core-fix
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -27,7 +27,7 @@ precommit: fix ## hook entry: same as fix
 
 # --- checks (verify, never produce artifacts) ---
 
-check: tools-format-check tools-lint tools-typecheck tools-test core-lint core-test web-typecheck web-types web-lint web-test web-build ## run all checks (the pre-commit gate)
+check: tools-format-check tools-lint tools-typecheck tools-test core-lint core-test core-native-test web-typecheck web-types web-lint web-test web-build ## run all checks (the pre-commit gate)
 
 quality: check tools-dead-code tools-unused-deps tools-security tools-audit tools-coverage build ## run the full quality gate
 	@echo "quality gate passed"
@@ -66,13 +66,19 @@ tools-upgrade: ## move the named python packages to their newest allowed version
 	cd tools && uv lock $(addprefix --upgrade-package ,$(PKGS)) && uv sync
 
 core-lint: ## check rust formatting and lint the keycore crate (rustfmt, clippy)
-	cd core && cargo fmt --check && cargo clippy --all-targets -- -D warnings
+	cd core && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo clippy --all-targets --features native -- -D warnings
 
 core-fix: ## format the keycore crate (rustfmt)
 	cd core && cargo fmt
 
 core-test: ## run the keycore crate tests (cargo test)
 	cd core && cargo test
+
+core-native-test: ## run the keycore crate tests with the native engine (cargo test --features native, needs web/public/keynet.onnx from make model)
+	cd core && cargo test --features native
+
+core-demo: ## draw the keys on a video with the native engine (ARGS="<video> <out-dir>")
+	cd core && cargo run --release --features native --example desktop -- $(ARGS)
 
 core-wasm: ## build the keycore crate for the browser into web/src/keycore-wasm (wasm-pack)
 	cd core && wasm-pack build --target web --release --out-dir ../web/src/keycore-wasm --out-name keycore

@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::decode::Peaks;
 use crate::fit::{key_width_px, Fit, Lift, RANSAC_SEED};
 use crate::geom::{
-    apply_homography, invert_homography, solve, Homography, Mulberry32, Point, ScoredPoint, Size,
+    apply_homography, distance, invert_homography, solve, Homography, Mulberry32, Point,
+    ScoredPoint, Size,
 };
 use crate::keys::{board_keys, keyboard_template, BLACK_KEY_DEPTH};
 
@@ -236,4 +237,71 @@ pub fn key_net_faces(fit: &Fit, lift: &Lift) -> Vec<Face> {
             ]
         })
         .collect()
+}
+
+fn signed_area(points: &[Point]) -> f64 {
+    points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .map(|(p, q)| p.x * q.y - q.x * p.y)
+        .sum::<f64>()
+        / 2.0
+}
+
+fn convex_hull(points: &[Point]) -> Vec<Point> {
+    let mut sorted = points.to_vec();
+    sorted.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)));
+    let cross =
+        |o: Point, a: Point, b: Point| (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    let half = |list: &mut dyn Iterator<Item = Point>| -> Vec<Point> {
+        let mut out: Vec<Point> = Vec::new();
+        for p in list {
+            while out.len() >= 2 && cross(out[out.len() - 2], out[out.len() - 1], p) <= 0.0 {
+                out.pop();
+            }
+            out.push(p);
+        }
+        out.pop();
+        out
+    };
+    let mut hull = half(&mut sorted.iter().copied());
+    hull.extend(half(&mut sorted.iter().rev().copied()));
+    hull
+}
+
+/// The outline of a black key's top and footprint together, starting at the top's first corner
+/// and wound the same way, so each point of it is the same spot of the key every frame.
+pub fn key_hull(top: &[Point; 4], footprint: &[Point; 4]) -> Vec<Point> {
+    let mut hull = convex_hull(&[top.as_slice(), footprint.as_slice()].concat());
+    if signed_area(&hull) * signed_area(top) < 0.0 {
+        hull.reverse();
+    }
+    let start = hull
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| distance(**a, top[0]).total_cmp(&distance(**b, top[0])))
+        .map_or(0, |(i, _)| i);
+    hull.rotate_left(start);
+    hull
+}
+
+#[cfg(test)]
+mod hull_tests {
+    use super::*;
+
+    fn square(x: f64, y: f64, side: f64) -> [Point; 4] {
+        [(0.0, 0.0), (side, 0.0), (side, side), (0.0, side)].map(|(dx, dy)| Point {
+            x: x + dx,
+            y: y + dy,
+        })
+    }
+
+    #[test]
+    fn the_hull_starts_at_the_tops_first_corner_and_winds_with_it() {
+        let top = square(0.0, 0.0, 1.0);
+        let hull = key_hull(&top, &square(0.5, 1.0, 1.0));
+        assert_eq!(hull.len(), 6);
+        assert_eq!(hull[0], top[0]);
+        assert!(signed_area(&hull) * signed_area(&top) > 0.0);
+    }
 }

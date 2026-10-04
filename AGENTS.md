@@ -9,7 +9,7 @@ Spike: automatic video editing for piano video. A camera watches hands on a real
 
 ## Where things live
 - web/ TS browser app (Vite, ONNX Runtime Web, MediaPipe hands): camera, model run and drawing
-- core/ Rust crate keycore: the geometry after the model (decode, fit, track, key faces), built to WebAssembly for web and natively for other platforms
+- core/ Rust crate keycore: the geometry after the model (decode, fit, track, key faces), built to WebAssembly for web and natively for other platforms (cargo feature `native`)
 - tools/ python uv package pianocv: offline lab (synthetic data, KeyNet training and scoring)
 - docs/ untracked local research notes
 - The Makefile is the single canonical interface for all checks; CI and pre-commit both call it.
