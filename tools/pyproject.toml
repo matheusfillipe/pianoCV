@@ -60,7 +60,7 @@ files = ["src/pianocv", "tests"]
 
 [[tool.mypy.overrides]]
 # cv2 and onnxruntime ship no type stubs upstream
-module = ["cv2", "onnxruntime", "torchvision.models"]
+module = ["cv2", "onnxruntime", "onnxruntime.transformers.float16", "torchvision.models"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
