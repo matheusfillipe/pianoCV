@@ -82,6 +82,8 @@ core-demo: ## draw the keys on a video with the native engine (ARGS="<video> <ou
 
 core-wasm: ## build the keycore crate for the browser into web/src/keycore-wasm (wasm-pack)
 	cd core && wasm-pack build --target web --release --out-dir ../web/src/keycore-wasm --out-name keycore
+	@# wasm-pack ignores its own output for git, which would also keep it out of the npm package
+	rm -f web/src/keycore-wasm/.gitignore
 
 build: ## build the python package (uv build)
 	uv build --project tools
