@@ -49,7 +49,7 @@ from pianocv.keynetmodel import (
     keynet_from_keyseg,
 )
 from pianocv.keyseg import preprocess_crop
-from pianocv.trainkeymatch import _augment_strip
+from pianocv.trainkeymatch import _augment_strip, _to_uint8
 from pianocv.trainkeyseg import _device, _held_out
 
 try:
@@ -85,6 +85,8 @@ _SINGLE_PEAK_LEAST = 0.5
 _OFFSET_WEIGHT = 1.0
 # phone and webcam captures run from 480 to 960 pixels wide
 _LOW_RES_WIDTHS = (480.0, 960.0)
+_CAMERA_SCALE = (0.4, 0.9)
+_CAMERA_JPEG_QUALITY = (30, 90)
 
 
 @dataclass(frozen=True)
@@ -176,6 +178,10 @@ class Recipe:
     # whether track crops are the rectified homography around the previous fit instead of the
     # oriented box
     rectified: bool = False
+    # whether every input crop passes through the camera pipeline simulation
+    camera_sim: bool = False
+    # whether only the output layers learn, so new points or labels leave what the model sees alone
+    heads_only: bool = False
 
 
 BASE_RECIPE = Recipe()
@@ -219,6 +225,8 @@ def sample(
     pixels = np.asarray(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB), dtype=np.uint8)
     if augment:
         pixels = _augment_strip(pixels, rng)
+    if augment and recipe.camera_sim:
+        pixels = camera_sim(pixels, rng)
     heat, weight = heatmap_targets(points, crop, (height, width), size, _ignore_mask(frame))
     if frame.real and recipe.mask_real_tops and fixed_path(frame, recipe.fixed_dir) is None:
         # a real frame's black-key tops come from the old pipeline's drawing, a guess at the
@@ -245,6 +253,56 @@ def _lower_resolution(image: np.ndarray, rng: np.random.Generator) -> np.ndarray
         interpolation=cv2.INTER_AREA,
     )
     return np.asarray(cv2.resize(small, (width, height), interpolation=cv2.INTER_LINEAR))
+
+
+def camera_sim(pixels: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """An RGB crop as another camera would give it. Every step keeps the pixel grid, so the
+    targets built from the crop stay aligned; lens distortion is left out because it would move
+    the labels."""
+    height, width = pixels.shape[:2]
+    image = pixels.astype(np.float32)
+    image *= rng.uniform(0.85, 1.15, size=3)
+    if rng.random() < 0.5:
+        image = _defocus(image, rng)
+    scale = rng.uniform(*_CAMERA_SCALE)
+    small = cv2.resize(
+        image, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA
+    )
+    image = np.asarray(cv2.resize(small, (width, height), interpolation=cv2.INTER_LINEAR))
+    ys, xs = np.mgrid[0:height, 0:width].astype(np.float32)
+    radius = ((xs / width - 0.5) ** 2 + (ys / height - 0.5) ** 2) / 0.5
+    image *= (1.0 - rng.uniform(0.0, 0.5) * radius)[..., None]
+    image = 255.0 * (np.clip(image, 0.0, 255.0) / 255.0) ** rng.uniform(0.8, 1.25)
+    image = (image - 128.0) * rng.uniform(0.75, 1.25) + 128.0 + rng.uniform(-20.0, 20.0)
+    # shot noise grows with the signal, read noise does not
+    shot = rng.uniform(0.0, 0.6) * np.sqrt(np.clip(image, 0.0, 255.0))
+    image += rng.normal(size=image.shape) * (shot + rng.uniform(0.0, 5.0))
+    return _compress(_to_uint8(image), rng)
+
+
+def _defocus(image: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    radius = int(rng.integers(1, 4))
+    kernel = np.zeros((2 * radius + 1, 2 * radius + 1), np.float32)
+    cv2.circle(kernel, (radius, radius), radius, 1.0, -1)
+    return np.asarray(cv2.filter2D(image, -1, kernel / kernel.sum()), dtype=np.float32)
+
+
+def _compress(image: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """JPEG at a random quality after the chroma blur a 4:2:0 video codec leaves."""
+    luma = cv2.cvtColor(image, cv2.COLOR_RGB2YCrCb)
+    height, width = luma.shape[:2]
+    half = (max(1, width // 2), max(1, height // 2))
+    for channel in (1, 2):
+        luma[..., channel] = cv2.resize(
+            cv2.resize(luma[..., channel], half, interpolation=cv2.INTER_AREA),
+            (width, height),
+            interpolation=cv2.INTER_LINEAR,
+        )
+    bgr = cv2.cvtColor(luma, cv2.COLOR_YCrCb2BGR)
+    quality = int(rng.integers(_CAMERA_JPEG_QUALITY[0], _CAMERA_JPEG_QUALITY[1] + 1))
+    ok, encoded = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    decoded = cv2.imdecode(encoded, cv2.IMREAD_COLOR) if ok else None
+    return np.asarray(cv2.cvtColor(decoded if decoded is not None else bgr, cv2.COLOR_BGR2RGB))
 
 
 class KeyNetDataset(Dataset[tuple[torch.Tensor, ...]]):
@@ -500,8 +558,16 @@ def train_keynet(
         if init_onnx is not None or init_pt is not None
         else []
     )
+    if recipe.heads_only:
+        for part in (model.features, model.ups):
+            part.requires_grad_(False)
+        frozen = [m for m in model.ups.modules() if isinstance(m, nn.BatchNorm2d)] + [
+            m for m in model.features.modules() if isinstance(m, nn.BatchNorm2d)
+        ]
     presence_loss = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(
+        [p for p in model.parameters() if p.requires_grad], lr=lr, weight_decay=1e-4
+    )
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, max_lr=lr, total_steps=max(steps_per_epoch * epochs, 1)
     )
@@ -599,9 +665,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--offsets", action="store_true", help="train the sub-cell offset head")
     parser.add_argument(
+        "--heads-only", action="store_true", help="train only the output layers, encoder frozen"
+    )
+    parser.add_argument(
         "--rectified",
         action="store_true",
         help="crop tracking samples with the rectifying homography",
+    )
+    parser.add_argument(
+        "--camera-sim",
+        action="store_true",
+        help="simulate other cameras on every input crop: noise, jpeg, blur, vignette, low res",
     )
     parser.add_argument(
         "--fixed-dir", type=Path, help="hand-corrected labels, one <frame stem>.json per frame"
@@ -663,6 +737,8 @@ def main() -> None:
                 offsets=args.offsets,
                 fixed_dir=args.fixed_dir,
                 rectified=args.rectified,
+                camera_sim=args.camera_sim,
+                heads_only=args.heads_only,
             ),
             epochs=args.epochs,
             batch=args.batch,

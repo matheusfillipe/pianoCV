@@ -13,7 +13,7 @@ PORT ?= 5274
         build web-typecheck web-lint web-fix web-test web-build dev dev-alt model site publish-models clean lab-export \
         lab-evaluate lab-real-seg2-prepare lab-relabel-keys lab-compare lab-trainseg2 lab-dataset-push \
         lab-keymatch-train lab-keymatch-push lab-keyseg-train lab-keyseg-labels lab-keyseg-push lab-keynet-push lab-keynet-train lab-keynet-eval lab-synth-test \
-        core-lint core-test core-wasm
+        core-lint core-test core-wasm core-fix lab-mlflow-log
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -225,6 +225,9 @@ lab-keyseg-push: ## pack data/real-keys, pianocv and the published keyseg.onnx f
 
 lab-keynet-push: ## pack data/real-keys, data/synth-motion, pianocv and keyseg.onnx for a KeyNet run and upload them with mc (ARGS="--alias <mc alias> --version <v>")
 	cd tools && uv run python -m pianocv.keysegpush --name keynet --motion-dir ../data/synth-motion $(ARGS)
+
+lab-mlflow-log: ## log a model's scores from a score JSON onto its MLflow run (ARGS="--tracking-uri <url> --run-id <id> --scores <json> --model <file> --prefix <what>")
+	cd tools && uv run python -m pianocv.mlflowlog $(ARGS)
 
 lab-keynet-train: ## train KeyNet locally; ARGS="--still-dir ../data/synth-keys ..." (see --help)
 	cd tools && uv run python -m pianocv.trainkeynet $(ARGS)

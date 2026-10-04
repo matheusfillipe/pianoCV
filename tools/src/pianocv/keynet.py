@@ -6,7 +6,7 @@ corner order, since that order is a convention some sources keep and others do n
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import cv2
@@ -121,6 +121,8 @@ class KeyPoints:
     back_gaps: np.ndarray
     black_back_low: np.ndarray
     black_back_high: np.ndarray
+    # per corner: True when the case hides it, so it has no peak and no loss
+    corner_hidden: np.ndarray = field(default_factory=lambda: np.zeros(4, dtype=bool))
 
 
 def _unit(vector: np.ndarray) -> np.ndarray:
@@ -252,6 +254,7 @@ def keypoints(frame: SynthKeysFrame) -> KeyPoints | None:
     ]
     return KeyPoints(
         corners=corners,
+        corner_hidden=_hidden_corners(frame, corners),
         gaps=gaps,
         black_low=_stacked([front.bottom_low for front in fronts]),
         black_high=_stacked([front.bottom_high for front in fronts]),
@@ -261,6 +264,14 @@ def keypoints(frame: SynthKeysFrame) -> KeyPoints | None:
         black_back_low=_stacked([front.back_low for front in fronts]),
         black_back_high=_stacked([front.back_high for front in fronts]),
     )
+
+
+def _hidden_corners(frame: SynthKeysFrame, corners: np.ndarray) -> np.ndarray:
+    """The roles' hidden flags: each role corner takes the flag of the sidecar corner nearest it."""
+    if frame.corner_visible is None or frame.corners_px is None:
+        return np.zeros(4, dtype=bool)
+    nearest = np.linalg.norm(corners[:, None] - frame.corners_px[None], axis=2).argmin(axis=1)
+    return np.asarray(~np.array(frame.corner_visible)[nearest])
 
 
 def _stacked(points: list[np.ndarray]) -> np.ndarray:
@@ -399,13 +410,17 @@ BACK_CHANNELS = (9, 10, 11)
 OFFSET_RADIUS_CELLS = 1
 
 
+def shown_corners(points: KeyPoints) -> list[np.ndarray]:
+    """Each corner as a one-row array, empty when the case hides it."""
+    return [
+        np.empty((0, 2)) if points.corner_hidden[k] else points.corners[k : k + 1] for k in range(4)
+    ]
+
+
 def _channel_points(points: KeyPoints) -> list[tuple[int, np.ndarray]]:
     """Each channel's visible points; a hidden (NaN) point gets no peak."""
     by_channel = [
-        points.corners[0:1],
-        points.corners[1:2],
-        points.corners[2:3],
-        points.corners[3:4],
+        *shown_corners(points),
         points.gaps,
         points.black_low,
         points.black_high,
@@ -468,6 +483,9 @@ def heatmap_targets(
         return heat, weight
 
     frame_width, frame_height = frame_size
+    for hidden in np.flatnonzero(points.corner_hidden):
+        cell = crop.points(points.corners[hidden][None])[0] / STRIDE - 0.25
+        _zero_radius(weight[hidden], cell, IGNORE_RADIUS_CELLS)
     for channel, frame_points in _channel_points(points):
         for point in frame_points:
             _splat(

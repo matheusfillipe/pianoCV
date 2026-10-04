@@ -55,6 +55,8 @@ class SynthKeysFrame:
     # a synth-motion clip id and its frame's position in it, when the sidecar carries them
     sequence: str | None = None
     frame_index: int | None = None
+    # per keybed corner, in the order of corners_px: False when the case or a cheek hides it
+    corner_visible: tuple[bool, ...] | None = None
 
 
 def _parse_face(raw: object, scale: np.ndarray, what: str) -> np.ndarray:
@@ -106,6 +108,13 @@ def parse_synth_keys_sidecar(sidecar_path: Path) -> SynthKeysFrame:
     frame_index = data.get("frameIndex")
     if frame_index is not None and not isinstance(frame_index, int):
         raise ValueError(f"sidecar {sidecar_path} frameIndex must be an int")
+    corner_visible = data.get("cornerVisible")
+    if corner_visible is not None and (
+        not isinstance(corner_visible, list)
+        or len(corner_visible) != 4
+        or not all(isinstance(flag, bool) for flag in corner_visible)
+    ):
+        raise ValueError(f"sidecar {sidecar_path} cornerVisible must list 4 booleans")
     scale = np.array([float(width), float(height)])
     return SynthKeysFrame(
         image_path=sidecar_path.with_suffix(".png"),
@@ -116,6 +125,7 @@ def parse_synth_keys_sidecar(sidecar_path: Path) -> SynthKeysFrame:
         real=data.get("kind") == "real-keys",
         sequence=sequence,
         frame_index=frame_index,
+        corner_visible=None if corner_visible is None else tuple(corner_visible),
     )
 
 

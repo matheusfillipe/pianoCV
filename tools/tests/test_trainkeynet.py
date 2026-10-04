@@ -18,9 +18,11 @@ from pianocv.keynet import (
     KeyPoints,
     offset_targets,
 )
+from pianocv.keynetmodel import KeyNet
 from pianocv.trainkeynet import (
     Recipe,
     _lower_resolution,
+    camera_sim,
     heatmap_loss,
     offset_loss,
     sample,
@@ -96,6 +98,25 @@ def test_training_runs_on_stills_negatives_and_held_out_real_frames(tmp_path: Pa
     assert not model.training
 
 
+def test_heads_only_training_leaves_the_encoder_and_decoder_untouched(tmp_path: Path) -> None:
+    _write_frames(tmp_path / "stills", 3)
+    torch.manual_seed(0)
+    before = KeyNet(pretrained=False).state_dict()
+    model, _ = train_keynet(
+        tmp_path / "stills",
+        epochs=1,
+        batch=2,
+        steps_per_epoch=3,
+        workers=0,
+        pretrained=False,
+        recipe=Recipe(heads_only=True),
+    )
+    after = model.state_dict()
+    for name, value in before.items():
+        moved = not torch.equal(value, after[name].cpu())
+        assert moved == name.startswith(("heat.", "presence.")), name
+
+
 def test_a_rectified_sample_peaks_at_the_projected_corners(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -128,6 +149,27 @@ def test_a_real_frame_teaches_no_black_key_tops(tmp_path: Path) -> None:
     assert float(heat[BLACK_TOP_CHANNELS[0]].max()) > 0.5
     assert float(weight[list(BLACK_TOP_CHANNELS)].max()) == 0.0
     assert float(weight[5].min()) == 1.0
+
+
+def test_a_hidden_corner_has_no_peak_and_no_weight_around_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("pianocv.trainkeynet.perturb_quad", lambda quad, _rng, _config: quad)
+    monkeypatch.setattr("pianocv.trainkeynet._jitter", lambda quad, _rng: quad)
+    monkeypatch.setattr("pianocv.trainkeynet._jitter_corners", lambda quad, _rng: quad)
+    _write_frames(tmp_path / "synth", 1)
+    sidecar = tmp_path / "synth" / "f0.json"
+    sidecar.write_text(
+        json.dumps(json.loads(sidecar.read_text()) | {"cornerVisible": [False, True, True, True]})
+    )
+    frame = load_synth_keys(tmp_path / "synth")[0]
+    _, heat, weight, _, _, _ = sample(
+        frame, False, np.random.default_rng(0), PerturbConfig(), False, Recipe(rectified=True)
+    )
+    assert float(heat[0].max()) == 0.0
+    assert float(weight[0].min()) == 0.0
+    assert float(heat[1].max()) > 0.5
+    assert float(weight[1].min()) == 1.0
 
 
 def test_a_real_frame_without_back_labels_has_zero_weight_on_the_back_channels(
@@ -322,3 +364,30 @@ def test_peak_scores_count_matches_misses_and_extras() -> None:
     assert score.recall == pytest.approx(0.5)
     assert score.precision == pytest.approx(0.5)
     assert score.error_px == pytest.approx(2.0)
+
+
+def test_camera_sim_changes_pixels_keeps_targets_and_repeats_under_a_seed(tmp_path: Path) -> None:
+    _write_frames(tmp_path / "real", 1)
+    frame = load_synth_keys(tmp_path / "real")[0]
+
+    def draw(recipe: Recipe) -> tuple[np.ndarray, np.ndarray]:
+        pixels, heat, *_ = sample(
+            frame, False, np.random.default_rng(3), PerturbConfig(), True, recipe
+        )
+        return pixels, heat
+
+    plain_pixels, plain_heat = draw(Recipe())
+    sim_pixels, sim_heat = draw(Recipe(camera_sim=True))
+    again_pixels, _ = draw(Recipe(camera_sim=True))
+    assert sim_pixels.shape == plain_pixels.shape
+    assert not np.array_equal(sim_pixels, plain_pixels)
+    assert np.array_equal(sim_pixels, again_pixels)
+    assert np.array_equal(sim_heat, plain_heat)
+    assert np.unravel_index(np.argmax(sim_heat[0]), sim_heat[0].shape) == np.unravel_index(
+        np.argmax(plain_heat[0]), plain_heat[0].shape
+    )
+
+
+def test_camera_sim_keeps_the_crop_size_on_a_flat_crop() -> None:
+    flat = np.full((TRACK_HEIGHT, TRACK_WIDTH, 3), 120, np.uint8)
+    assert camera_sim(flat, np.random.default_rng(1)).shape == flat.shape

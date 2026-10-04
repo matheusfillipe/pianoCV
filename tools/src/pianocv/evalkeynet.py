@@ -30,6 +30,7 @@ from pianocv.keynet import (
     frame_points,
     oriented_crop,
     rectified_crop,
+    shown_corners,
 )
 from pianocv.keyseg import preprocess_crop
 
@@ -156,7 +157,7 @@ def _ignored(frame: SynthKeysFrame) -> np.ndarray | None:
 
 def _labels(points: KeyPoints, channel: int) -> np.ndarray:
     by_channel = [
-        *(points.corners[k : k + 1] for k in range(4)),
+        *shown_corners(points),
         points.gaps,
         points.black_low,
         points.black_high,
@@ -243,6 +244,50 @@ def score(
     )
 
 
+# a white key is 23.5 mm wide and the keybed 150 mm deep
+_KEY_WIDTH_MM = 23.5
+_KEYBED_DEPTH_MM = 150.0
+_ELEVATION_EDGES_DEG = (30.0, 60.0)
+_ELEVATION_NAMES = ("low", "mid", "high")
+
+
+def camera_elevation(points: KeyPoints) -> float:
+    """The camera's elevation over the keybed in degrees, from how much the quad's depth is
+    foreshortened against its width: 0 looks along the keys, 90 looks straight down."""
+    corners = points.corners
+    width = (np.linalg.norm(corners[1] - corners[0]) + np.linalg.norm(corners[2] - corners[3])) / 2
+    depth = (np.linalg.norm(corners[3] - corners[0]) + np.linalg.norm(corners[2] - corners[1])) / 2
+    true_ratio = _KEYBED_DEPTH_MM / (_KEY_WIDTH_MM * (len(points.gaps) + 1))
+    return float(np.degrees(np.arcsin(np.clip(depth / width / true_ratio, 0.0, 1.0))))
+
+
+def view_of(points: KeyPoints) -> tuple[str, str]:
+    bucket = _ELEVATION_NAMES[int(np.searchsorted(_ELEVATION_EDGES_DEG, camera_elevation(points)))]
+    return f"{len(points.gaps) + 1} white keys", f"elevation {bucket}"
+
+
+def score_by_view(
+    frames: list[SynthKeysFrame],
+    predict: Predictor,
+    decoder: Decoder,
+    threshold: float = PEAK_THRESHOLD,
+    fixed_dir: Path | None = None,
+    rectified: bool = False,
+) -> dict[str, Score]:
+    """The overall score, then one per board size and per camera elevation bucket."""
+    views: dict[str, list[SynthKeysFrame]] = {}
+    for frame in frames:
+        points = frame_points(frame, fixed_dir)
+        if points is None or not np.isfinite(points.corners).all():
+            continue
+        for view in view_of(points):
+            views.setdefault(view, []).append(frame)
+    return {
+        name: score(subset, predict, decoder, threshold, fixed_dir, rectified)
+        for name, subset in {"all": frames, **dict(sorted(views.items()))}.items()
+    }
+
+
 def _group(errors: list[float], labelled: int) -> GroupScore:
     values = np.array(errors) if errors else np.array([np.nan])
     return GroupScore(
@@ -309,6 +354,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--rectified", action="store_true", help="crop with the rectifying homography"
     )
+    parser.add_argument(
+        "--by-view",
+        action="store_true",
+        help="also score per board size and camera elevation: low <30, mid 30-60, high >60 degrees",
+    )
     parser.add_argument("--json", type=Path, help="also write the scores here")
     return parser
 
@@ -327,17 +377,18 @@ def main() -> None:
     for model in args.model:
         predict = onnx_predictor(model)
         for name in args.decoder or ["centroid"]:
-            result = score(
-                frames, predict, DECODERS[name], args.threshold, args.fixed_dir, args.rectified
-            )
-            results[f"{model.name} {name}"] = asdict(result)
-            print(f"{model.name} ({name}): {result.frames} frames, fail {result.failure_rate:.3f}")
-            for group, value in result.groups.items():
-                print(
-                    f"  {group:8} n {value.labels:5}  recall {value.recall:.3f}  median "
-                    f"{value.median_keys:.3f}  mean {value.mean_keys:.3f}  "
-                    + "  ".join(f"pck@{k} {v:.3f}" for k, v in value.pck.items())
-                )
+            call = (frames, predict, DECODERS[name], args.threshold, args.fixed_dir, args.rectified)
+            scores = score_by_view(*call) if args.by_view else {"all": score(*call)}
+            for view, result in scores.items():
+                label = f"{model.name} {name}" + ("" if view == "all" else f" {view}")
+                results[label] = asdict(result)
+                print(f"{label}: {result.frames} frames, fail {result.failure_rate:.3f}")
+                for group, value in result.groups.items():
+                    print(
+                        f"  {group:8} n {value.labels:5}  recall {value.recall:.3f}  median "
+                        f"{value.median_keys:.3f}  mean {value.mean_keys:.3f}  "
+                        + "  ".join(f"pck@{k} {v:.3f}" for k, v in value.pck.items())
+                    )
     if args.json is not None:
         args.json.write_text(json.dumps(results, indent=2))
 
