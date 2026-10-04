@@ -64,19 +64,14 @@ module = ["cv2", "onnxruntime", "onnxruntime.transformers.float16", "torchvision
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# mlflow is optional at runtime (see trainseg2's guarded import) and ships partial types
+# mlflow is optional at runtime (see trainkeynet's guarded import) and ships partial types
 module = ["mlflow", "mlflow.data"]
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-# torch 2.13 ships Tensor.backward untyped in torch/_tensor.py
-module = ["pianocv.train", "pianocv.trainseg", "pianocv.trainseg2", "pianocv.trainkeymatch", "test_model"]
-disallow_untyped_calls = false
 
 [tool.deptry.per_rule_ignores]
 # torch.onnx.export loads it at call time; it is never imported by name
 DEP002 = ["onnxscript"]
-# trainseg2 imports mlflow only behind --mlflow and runs with it absent, so it stays a dev dependency
+# trainkeynet imports mlflow only behind --mlflow and runs with it absent, so it stays a dev dependency
 DEP004 = ["mlflow"]
 
 [tool.pytest.ini_options]

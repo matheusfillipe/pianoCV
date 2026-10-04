@@ -21,5 +21,12 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
       - run: make install
       - run: make quality

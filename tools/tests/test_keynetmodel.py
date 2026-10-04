@@ -4,6 +4,7 @@ import numpy as np
 import onnxruntime as ort
 import torch
 
+from conftest import ExportKeyseg
 from pianocv.keynet import CHANNELS, SEARCH_SIZE, STRIDE, TRACK_HEIGHT, TRACK_WIDTH
 from pianocv.keynetmodel import (
     KeyNet,
@@ -11,7 +12,7 @@ from pianocv.keynetmodel import (
     keynet_from_checkpoint,
     keynet_from_keyseg,
 )
-from pianocv.keyseg import KeySegNet, export_keyseg_onnx
+from pianocv.keyseg import KeySegNet
 
 
 def test_heatmaps_come_at_stride_two_in_both_modes() -> None:
@@ -44,11 +45,13 @@ def test_one_export_serves_the_track_crop_and_the_search_frame(tmp_path: Path) -
         assert 0.0 <= float(presence[0, 0]) <= 1.0
 
 
-def test_the_encoder_starts_from_a_keyseg_export(tmp_path: Path) -> None:
+def test_the_encoder_starts_from_a_keyseg_export(
+    tmp_path: Path, export_keyseg: ExportKeyseg
+) -> None:
     torch.manual_seed(0)
     keyseg = KeySegNet(pretrained=False)
     path = tmp_path / "keyseg.onnx"
-    export_keyseg_onnx(keyseg, str(path))
+    export_keyseg(keyseg, str(path))
     model = keynet_from_keyseg(str(path)).eval()
     crop = torch.randn(1, 3, TRACK_HEIGHT, TRACK_WIDTH)
     with torch.no_grad():

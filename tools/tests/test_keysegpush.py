@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from pianocv.keysegpush import build_keyseg_bundle, push_keyseg
+from pianocv.keysegpush import build_keyseg_bundle, main, push_keyseg
 
 
 def _write(path: Path, content: str = "x") -> None:
@@ -45,7 +45,7 @@ def test_push_uploads_the_bundle_under_a_new_version(
 ) -> None:
     real_dir, init_onnx, pianocv_dir = _sources(tmp_path)
     uploaded: list[str] = []
-    monkeypatch.setattr("pianocv.keysegpush._destination_taken", lambda *a, **k: False)
+    monkeypatch.setattr("pianocv.keysegpush._destination_taken", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         "pianocv.keysegpush._mc_cp", lambda _path, destination: uploaded.append(destination)
     )
@@ -59,7 +59,7 @@ def test_push_uploads_the_bundle_under_a_new_version(
 def test_push_refuses_a_version_already_there(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr("pianocv.keysegpush._destination_taken", lambda *a, **k: True)
+    monkeypatch.setattr("pianocv.keysegpush._destination_taken", lambda *_args, **_kwargs: True)
     with pytest.raises(FileExistsError, match="already has a bundle"):
         push_keyseg(tmp_path, tmp_path, tmp_path, "taken", alias="store")
 
@@ -89,3 +89,17 @@ def test_bundle_packs_rendered_camera_paths_when_given(tmp_path: Path) -> None:
     )
     with tarfile.open(tar_path) as archive:
         assert "synth-motion/motion-a-000.json" in archive.getnames()
+
+
+def test_main_prints_the_uri_from_push(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        "pianocv.keysegpush.push_keyseg",
+        lambda *_args, **_kwargs: "s3://datasets/keybed/keyseg-real-x/bundle.tar.zst",
+    )
+    monkeypatch.setattr("sys.argv", ["keysegpush", "--alias", "store"])
+
+    main()
+
+    assert capsys.readouterr().out.strip() == "s3://datasets/keybed/keyseg-real-x/bundle.tar.zst"

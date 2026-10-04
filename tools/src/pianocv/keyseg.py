@@ -1,13 +1,7 @@
-"""KeySegNet: segments every key's own pixels in an oriented crop around the keybed.
-
-The crop only rotates and scales the frame around a rough keybed quad, so the keys keep the
-shape the camera gives them and the model is free to find them anywhere in it; the quad says
-where to look, never what shape a key has.
-"""
+"""KeySegNet: the pretrained U-Net whose published export initialises KeyNet's encoder."""
 
 from itertools import pairwise
 
-import cv2
 import numpy as np
 import onnx
 import torch
@@ -15,96 +9,15 @@ from onnx import numpy_helper
 from torch import nn
 from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small
 
-from pianocv.keymatch import SidecarKey, SynthKeysFrame
-from pianocv.keynet import Crop, oriented_crop
 from pianocv.segnet2 import normalise
 
 CROP_WIDTH = 1024
 CROP_HEIGHT = 224
-BACKGROUND, WHITE, BLACK, BOUNDARY = 0, 1, 2, 3
 CLASSES = 4
-# crop pixels outside the camera frame carry no picture to learn from
-IGNORE = 255
-# the crop reaches this far past the quad's ends and across its depth, as a share of the
-# quad's length, so keys a wrong quad cuts off still land inside it
-CROP_MARGIN_ALONG = 0.08
-CROP_MARGIN_ACROSS = 0.15
-BOUNDARY_PX = 1
-# a hand mask comes from a segmenter's low-resolution output, so its edge is grown before use
-IGNORE_GROWTH_PX = 7
-# a real label is only corrected where its pixel sits this share of the way past the split
-# towards the other class's median, so a soft edge or a glint keeps its label
-_REFINE_MARGIN = 0.35
-_REFINE_LEAST_PIXELS = 100
 
 _SKIP_LAYERS = (1, 3, 8, 12)
 _SKIP_CHANNELS = (16, 24, 48, 576)
 _DECODER_CHANNELS = (96, 48, 24, 16, 16)
-
-
-def crop_for(quad_px: np.ndarray) -> Crop:
-    """An oriented crop with the keys running left to right and the player's edge at the bottom.
-
-    Scale is chosen so both the quad's length and its depth fit with their margins, the same
-    way the browser runtime crops, which is what lets the model run on a live frame.
-    """
-    return oriented_crop(quad_px, CROP_WIDTH, CROP_HEIGHT, CROP_MARGIN_ALONG, CROP_MARGIN_ACROSS)
-
-
-def crop_image(image_bgr: np.ndarray, crop: Crop) -> np.ndarray:
-    warped = cv2.warpAffine(
-        image_bgr, crop.to_crop[:2], (CROP_WIDTH, CROP_HEIGHT), flags=cv2.INTER_LINEAR
-    )
-    return np.asarray(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB), dtype=np.uint8)
-
-
-def black_silhouette(key: SidecarKey) -> np.ndarray:
-    """A black key's visible outline: the convex hull of its eight corners.
-
-    The sidecar carries the top face and the front face; the front's two corners that are not
-    on the top give the drop from the top to the white keys, which lowers all four top corners.
-    """
-    if key.front is None:
-        return key.top
-    shared = [
-        corner for corner in key.front if np.min(np.linalg.norm(key.top - corner, axis=1)) < 1e-6
-    ]
-    lower = [
-        corner for corner in key.front if np.min(np.linalg.norm(key.top - corner, axis=1)) >= 1e-6
-    ]
-    if len(shared) != 2 or len(lower) != 2:
-        return np.vstack([key.top, key.front])
-    drop = np.mean(lower, axis=0) - np.mean(shared, axis=0)
-    corners = np.vstack([key.top, key.top + drop]).astype(np.float32)
-    return np.asarray(cv2.convexHull(corners)[:, 0, :], dtype=np.float64)
-
-
-def label_map(frame: SynthKeysFrame, crop: Crop) -> np.ndarray:
-    labels = np.zeros((CROP_HEIGHT, CROP_WIDTH), dtype=np.uint8)
-    whites = [crop.points(key.top) for key in frame.keys if not key.black]
-    for face in whites:
-        cv2.fillPoly(labels, [np.round(face).astype(np.int32)], WHITE)
-    edges = np.zeros_like(labels)
-    for face in whites:
-        cv2.polylines(edges, [np.round(face).astype(np.int32)], True, 1, thickness=BOUNDARY_PX)
-    labels[(edges > 0) & (labels == WHITE)] = BOUNDARY
-    for key in frame.keys:
-        if key.black:
-            outline = crop.points(black_silhouette(key))
-            cv2.fillPoly(labels, [np.round(outline).astype(np.int32)], BLACK)
-    if frame.ignore_mask is not None:
-        covered = cv2.imread(str(frame.ignore_mask), cv2.IMREAD_GRAYSCALE)
-        if covered is None:
-            raise FileNotFoundError(f"cannot read ignore mask {frame.ignore_mask}")
-        covered = cv2.dilate(covered, np.ones((IGNORE_GROWTH_PX, IGNORE_GROWTH_PX), np.uint8))
-        warped = cv2.warpAffine(covered, crop.to_crop[:2], (CROP_WIDTH, CROP_HEIGHT))
-        labels[warped > 127] = IGNORE
-    width, height = frame.image_size
-    inside = cv2.warpAffine(
-        np.ones((height, width), dtype=np.uint8), crop.to_crop[:2], (CROP_WIDTH, CROP_HEIGHT)
-    )
-    labels[inside == 0] = IGNORE
-    return labels
 
 
 class _Up(nn.Module):
@@ -159,70 +72,6 @@ class KeySegNet(nn.Module):
 
 def preprocess_crop(crop_rgb: np.ndarray) -> np.ndarray:
     return np.asarray(normalise(crop_rgb[None])[0], dtype=np.float32)
-
-
-def class_iou(predicted: np.ndarray, truth: np.ndarray) -> list[float]:
-    ious: list[float] = []
-    seen = truth != IGNORE
-    for label in range(CLASSES):
-        union = (seen & ((predicted == label) | (truth == label))).sum()
-        inter = (seen & (predicted == label) & (truth == label)).sum()
-        ious.append(float(inter / union) if union > 0 else 1.0)
-    return ious
-
-
-def refine_by_brightness(labels: np.ndarray, crop_rgb: np.ndarray) -> np.ndarray:
-    """A real frame's labels, corrected by its own pixels.
-
-    The app's fit places a black key within a fraction of a key, and far away that is enough to
-    run one black key into the next. A pixel keeps a black label only where it is clearly dark:
-    clearly bright it is the white key between two black ones, and in between it is left out,
-    as the shadowed strip between two black keys at the back is. A pixel labelled white that
-    is clearly dark is a shadow or a black key the fit missed, and is left out too, as is every
-    black label on a row whose white keys are dark, which is the case's lip or a shadow.
-    """
-    grey = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2GRAY)
-    keys = (labels == WHITE) | (labels == BLACK)
-    if int(keys.sum()) < _REFINE_LEAST_PIXELS:
-        return labels
-    split, _ = cv2.threshold(grey[keys].reshape(-1, 1), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    bright = float(np.median(grey[keys & (grey >= split)]))
-    dark = float(np.median(grey[keys & (grey < split)]))
-    clearly_dark = grey < split - _REFINE_MARGIN * (split - dark)
-    clearly_bright = grey > split + _REFINE_MARGIN * (bright - split)
-    refined = labels.copy()
-    refined[(labels == BLACK) & ~clearly_dark] = IGNORE
-    refined[(labels == BLACK) & clearly_bright] = WHITE
-    refined[(labels == WHITE) & clearly_dark] = IGNORE
-    # a crop row whose white keys are dark too runs through the case or a shadow, where a dark
-    # pixel says nothing about a black key; the crop's rows run across the keys
-    for row in range(labels.shape[0]):
-        whites = grey[row][labels[row] == WHITE]
-        if whites.size and float(np.median(whites)) < split:
-            refined[row][labels[row] == BLACK] = IGNORE
-    return refined
-
-
-class _Softmax(nn.Module):
-    def __init__(self, model: KeySegNet) -> None:
-        super().__init__()
-        self.model = model
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.softmax(self.model(x), dim=1)
-
-
-def export_keyseg_onnx(model: KeySegNet, onnx_path: str) -> None:
-    model.eval()
-    torch.onnx.export(
-        _Softmax(model),
-        (torch.zeros(1, 3, CROP_HEIGHT, CROP_WIDTH),),
-        onnx_path,
-        input_names=["crop"],
-        output_names=["classes"],
-        opset_version=17,
-        dynamo=False,
-    )
 
 
 def keyseg_from_onnx(onnx_path: str) -> KeySegNet:

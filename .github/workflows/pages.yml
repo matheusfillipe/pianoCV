@@ -20,6 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
       - run: make site BASE=/${{ github.event.repository.name }}/
       - uses: actions/upload-pages-artifact@v5
         with:

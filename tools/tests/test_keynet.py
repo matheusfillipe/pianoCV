@@ -26,7 +26,6 @@ from pianocv.keynet import (
     rectified_crop,
     squash_crop,
 )
-from pianocv.keyseg import CROP_HEIGHT, CROP_MARGIN_ACROSS, CROP_MARGIN_ALONG, CROP_WIDTH, crop_for
 
 # one octave, C4 to B4: 7 white keys and the standard 2-and-3 black pattern
 WHITE_PITCHES = (60, 62, 64, 65, 67, 69, 71)
@@ -401,12 +400,6 @@ def test_oriented_crop_generalises_the_keyseg_crop_size() -> None:
     )
     corners = generic.points(quad)
     assert np.allclose(corners.mean(axis=0), (TRACK_WIDTH / 2, TRACK_HEIGHT / 2))
-
-
-def test_keyseg_crop_for_stays_identical_to_the_general_oriented_crop() -> None:
-    quad = np.array([(100.0, 200.0), (500.0, 200.0), (500.0, 300.0), (100.0, 300.0)])
-    expected = oriented_crop(quad, CROP_WIDTH, CROP_HEIGHT, CROP_MARGIN_ALONG, CROP_MARGIN_ACROSS)
-    assert np.array_equal(crop_for(quad).to_crop, expected.to_crop)
 
 
 def test_sidecar_parses_a_negative_with_no_corners_and_keeps_the_sequence_fields(

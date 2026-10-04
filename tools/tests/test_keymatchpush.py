@@ -52,7 +52,7 @@ def test_build_keymatch_bundle_rejects_a_missing_source_directory(tmp_path: Path
 def test_push_keymatch_rejects_an_existing_version(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr("pianocv.keymatchpush._destination_taken", lambda *a, **k: True)
+    monkeypatch.setattr("pianocv.keymatchpush._destination_taken", lambda *_args, **_kwargs: True)
 
     with pytest.raises(FileExistsError, match="already has a bundle"):
         push_keymatch(tmp_path, tmp_path, "taken", alias="store")
@@ -65,7 +65,7 @@ def test_push_keymatch_builds_compresses_and_uploads_the_bundle(
     _write(data_dir / "a.json", "{}")
     _write(pianocv_dir / "keymatch.py", "# module")
     uploaded: list[tuple[Path, str]] = []
-    monkeypatch.setattr("pianocv.keymatchpush._destination_taken", lambda *a, **k: False)
+    monkeypatch.setattr("pianocv.keymatchpush._destination_taken", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         "pianocv.keymatchpush._mc_cp",
         lambda local_path, destination: uploaded.append((local_path, destination)),
@@ -83,7 +83,7 @@ def test_main_prints_the_uri_from_push_keymatch(
 ) -> None:
     monkeypatch.setattr(
         "pianocv.keymatchpush.push_keymatch",
-        lambda *a, **k: "s3://datasets/keybed/keymatch-x/bundle.tar.zst",
+        lambda *_args, **_kwargs: "s3://datasets/keybed/keymatch-x/bundle.tar.zst",
     )
     monkeypatch.setattr("sys.argv", ["keymatchpush", "--alias", "store"])
 

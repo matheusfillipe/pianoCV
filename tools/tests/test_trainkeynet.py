@@ -1,4 +1,5 @@
 import json
+from contextlib import nullcontext
 from pathlib import Path
 
 import cv2
@@ -22,8 +23,10 @@ from pianocv.keynetmodel import KeyNet
 from pianocv.trainkeynet import (
     Recipe,
     _lower_resolution,
+    _require_mlflow,
     camera_sim,
     heatmap_loss,
+    main,
     offset_loss,
     sample,
     score_peaks,
@@ -391,3 +394,87 @@ def test_camera_sim_changes_pixels_keeps_targets_and_repeats_under_a_seed(tmp_pa
 def test_camera_sim_keeps_the_crop_size_on_a_flat_crop() -> None:
     flat = np.full((TRACK_HEIGHT, TRACK_WIDTH, 3), 120, np.uint8)
     assert camera_sim(flat, np.random.default_rng(1)).shape == flat.shape
+
+
+class _Tracker:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def set_experiment(self, name: str) -> None:
+        self.calls.append("experiment")
+
+    def start_run(self) -> nullcontext[None]:
+        return nullcontext()
+
+    def log_params(self, _params: dict[str, str]) -> None:
+        self.calls.append("params")
+
+    def log_metrics(self, metrics: dict[str, float], step: int) -> None:
+        self.calls.append("metrics")
+
+    def log_artifact(self, path: str) -> None:
+        self.calls.append("artifact")
+
+
+def _run_main(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra: list[str]) -> None:
+    _write_frames(tmp_path / "stills", 3)
+    _write_frames(tmp_path / "real", 2)
+    real_train = train_keynet
+    monkeypatch.setattr(
+        "pianocv.trainkeynet.train_keynet",
+        lambda *args, **kwargs: real_train(*args, **kwargs, pretrained=False),
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "trainkeynet",
+            "--still-dir",
+            str(tmp_path / "stills"),
+            "--real-dir",
+            str(tmp_path / "real"),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--epochs",
+            "1",
+            "--batch",
+            "2",
+            "--steps-per-epoch",
+            "2",
+            "--workers",
+            "0",
+            *extra,
+        ],
+    )
+    main()
+
+
+def test_main_saves_the_model_and_its_scores(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _run_main(tmp_path, monkeypatch, [])
+
+    for name in ("keynet.pt", "keynet.onnx", "synthetic_recall.txt", "real_recall.txt"):
+        assert (tmp_path / "out" / name).is_file()
+
+
+def test_main_logs_to_mlflow_when_asked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tracker = _Tracker()
+    monkeypatch.setattr("pianocv.trainkeynet.mlflow", tracker)
+
+    _run_main(tmp_path, monkeypatch, ["--mlflow"])
+
+    assert tracker.calls == ["experiment", "params", "metrics", "artifact", "artifact"]
+
+
+def test_main_rejects_shares_that_are_not_three_numbers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(ValueError, match="three numbers"):
+        _run_main(tmp_path, monkeypatch, ["--shares", "1,2"])
+
+
+def test_require_mlflow_raises_when_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pianocv.trainkeynet.mlflow", None)
+
+    with pytest.raises(RuntimeError, match="mlflow is not installed"):
+        _require_mlflow()

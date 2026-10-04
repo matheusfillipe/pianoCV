@@ -1,5 +1,5 @@
-"""KeyNet's label side: the crop geometry, keypoints and heatmap targets one small detector
-trains against, replacing keybed_seg2, keyseg and keymatch with a single set of heads.
+"""KeyNet's label side: the crop geometry, keypoints and heatmap targets the keypoint model
+trains against.
 
 Every role (low/high, back/front) is read off the keys' own geometry, never off a sidecar's
 corner order, since that order is a convention some sources keep and others do not.
