@@ -11,16 +11,11 @@ import {
 import { drawHands, drawKeys, drawQuad } from "./draw";
 import { createEffects, lowestPitchFor } from "./effects";
 import { createHandTracker, type HandTracker } from "./hands";
-import type { Point } from "./homography";
 import { createHud, type Hud } from "./hud";
-import {
-  type DetectedKey,
-  type KeyNetFit,
-  keyHull,
-  keyNetFaces,
-} from "./keycore";
+import type { KeyNetFit } from "./keycore";
 import { createKeyNet, KEYNET_URL, type KeyNetRunner } from "./keynetrunner";
 import { createKeyNetSession } from "./keynetsession";
+import { type KeyOutline, keyOutlines } from "./keyoutlines";
 import { createLab } from "./lab";
 import {
   createOcclusionMask,
@@ -32,7 +27,7 @@ import { viteAssets } from "./viteassets";
 declare global {
   interface Window {
     // the keys drawn this frame, as frame fractions
-    pianocvDrawnKeys?: readonly DrawnKey[];
+    pianocvDrawnKeys?: readonly KeyOutline[];
   }
 }
 
@@ -127,31 +122,6 @@ function keynetStatusText(fit: KeyNetFit | null): string {
   return `tracking ${fit.whiteKeys} white keys from ${fit.phase}, ${tops}`;
 }
 
-type DrawnKey = {
-  readonly black: boolean;
-  readonly semitone: number;
-  readonly bar: readonly Point[];
-};
-
-function oneFacePerKey(faces: readonly DetectedKey[]): DrawnKey[] {
-  const keys: DrawnKey[] = [];
-  for (let i = 0; i < faces.length; i += 1) {
-    const face = faces[i];
-    const footprint = faces[i + 1];
-    if (
-      face.black &&
-      footprint?.black &&
-      footprint.semitone === face.semitone
-    ) {
-      keys.push({ ...face, bar: keyHull(face.bar, footprint.bar) });
-      i += 1;
-    } else {
-      keys.push(face);
-    }
-  }
-  return keys;
-}
-
 function startLoop(
   video: HTMLVideoElement,
   canvas: HTMLCanvasElement,
@@ -211,7 +181,7 @@ function startLoop(
     const fit = keyNetSession?.fit() ?? null;
     if (fit) {
       drawQuad(ctx, [...fit.quad], box.w, box.h, AUTO_COLOR, "keybed");
-      const keys = oneFacePerKey(keyNetFaces(fit));
+      const keys = keyOutlines(fit);
       window.pianocvDrawnKeys = keys;
       if (hud.state.keys) {
         drawKeys(ctx, keys, box.w, box.h);

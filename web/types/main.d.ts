@@ -1,12 +1,6 @@
-import type { Point } from "./homography";
+import { type KeyOutline } from "./keyoutlines";
 declare global {
     interface Window {
-        pianocvDrawnKeys?: readonly DrawnKey[];
+        pianocvDrawnKeys?: readonly KeyOutline[];
     }
 }
-type DrawnKey = {
-    readonly black: boolean;
-    readonly semitone: number;
-    readonly bar: readonly Point[];
-};
-export {};
