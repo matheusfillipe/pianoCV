@@ -189,7 +189,7 @@ function startLoop(
         effects.draw(
           ctx,
           keys,
-          lowestPitchFor(fit.whiteKeys, fit.phase),
+          lowestPitchFor(fit.phase, keys.at(-1)?.semitone ?? 0),
           box.w,
           box.h,
           now,

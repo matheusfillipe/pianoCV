@@ -49,8 +49,7 @@ export type SpacePoint = {
 };
 /** The keyboard's space as the camera sees it. */
 export type KeySpace = {
-    /** Where a point lands in the frame, in fractions, or null where it sits on the lens or behind
-     * it. */
+    /** Where a point lands in the frame, in fractions, or null where it sits behind the camera. */
     readonly project: (point: SpacePoint) => Point | null;
     /** Where the camera stands, or null for a view so far off that its rays are parallel. */
     readonly camera: SpacePoint | null;
@@ -80,6 +79,9 @@ export type KeyOutline = {
     readonly black: boolean;
     /** Semitones above the board's first white key. */
     readonly semitone: number;
+    /** Where the key starts and ends along the board, in white keys from its first key. */
+    readonly from: number;
+    readonly to: number;
     /** The key's outline in frame fractions, a black key's raised top and footprint together. */
     readonly bar: readonly Point[];
     /** The face the key shows on top: a white key's own face and a black key's raised top. */

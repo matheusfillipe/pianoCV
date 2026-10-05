@@ -10,19 +10,19 @@ import {
 
 describe("lowestPitchFor", () => {
   it("maps every standard board to its lowest pitch", () => {
-    expect(lowestPitchFor(29, "C")).toBe(36);
-    expect(lowestPitchFor(36, "C")).toBe(36);
-    expect(lowestPitchFor(45, "E")).toBe(28);
-    expect(lowestPitchFor(52, "A")).toBe(21);
+    expect(lowestPitchFor("C", 48)).toBe(36);
+    expect(lowestPitchFor("C", 60)).toBe(36);
+    expect(lowestPitchFor("E", 75)).toBe(28);
+    expect(lowestPitchFor("A", 87)).toBe(21);
   });
 
   it("centres a board of any other size where a full piano is centred", () => {
-    // Fifteen white keys from a C is a 25-key board, C3 to C5.
-    expect(lowestPitchFor(15, "C")).toBe(48);
+    // A 25-key board from a C sits in the middle of the piano, C3 to C5.
+    expect(lowestPitchFor("C", 24)).toBe(48);
   });
 
   it("numbers nothing for a letter that is not a key", () => {
-    expect(lowestPitchFor(29, "H")).toBeNull();
+    expect(lowestPitchFor("H", 48)).toBeNull();
   });
 });
 

@@ -1,6 +1,5 @@
 import { outsideBlackKeys, tracePolygon } from "./draw";
 import type { Point } from "./homography";
-import { isBlack } from "./keys";
 
 declare global {
   interface Window {
@@ -22,25 +21,14 @@ const LETTER_SEMITONES: Readonly<Record<string, number>> = {
 /** The middle of a full piano, MIDI 21 to 108. */
 const PIANO_MIDDLE = (21 + 108) / 2;
 
-/** The MIDI pitch of the lowest key of a board with this many white keys starting on this
- * letter. We take the octave that centres the board where a full piano is centred, which is
+/** The MIDI pitch of the lowest key of a board starting on this letter and spanning this many
+ * semitones. We take the octave that centres the board where a full piano is centred, which is
  * where every standard size sits, since one C looks exactly like the next. */
-export function lowestPitchFor(
-  whiteKeys: number,
-  phase: string,
-): number | null {
+export function lowestPitchFor(phase: string, reach: number): number | null {
   const first = LETTER_SEMITONES[phase];
   if (first === undefined) {
     return null;
   }
-  let pitch = first;
-  for (let whites = 1; whites < whiteKeys; ) {
-    pitch += 1;
-    if (!isBlack(pitch)) {
-      whites += 1;
-    }
-  }
-  const reach = pitch - first;
   return first + 12 * Math.round((PIANO_MIDDLE - reach / 2 - first) / 12);
 }
 

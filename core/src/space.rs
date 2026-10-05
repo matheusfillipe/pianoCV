@@ -6,11 +6,9 @@ use crate::geom::Point;
 /// White-key widths from the keybed's far edge to the player's edge: a white key is about 150 mm
 /// long and 23.5 mm wide.
 const KEYBED_DEPTH_KEYS: f64 = 6.4;
-/// White-key widths a black key's top stands above the white keys: about 12.5 mm on a 23.5 mm key.
-const BLACK_RISE_KEYS: f64 = 0.53;
-/// Closer to the camera than this share of the keybed's own distance, a point is on the lens or
-/// behind it and has no place in the picture.
-const NEAREST_SHARE: f64 = 0.1;
+/// White-key widths a black key's top stands above the white keys, measured off the reference
+/// keyboard mesh the synthetic set is rendered from.
+const BLACK_RISE_KEYS: f64 = 0.59;
 
 /// A point in the keyboard's own space, in white-key widths: `x` along the board from its first
 /// key, `depth` from the keybed's far edge towards the player, `height` up off the white keys.
@@ -30,9 +28,6 @@ pub struct Space {
     /// Where the camera stands, or None for a view so far off that its rays are parallel.
     pub camera: Option<SpacePoint>,
     pub keybed_depth: f64,
-    /// The projection's last row at the middle of the keybed, which is how far away the keybed is.
-    pub keybed_distance: f64,
-    pub nearest_share: f64,
 }
 
 impl Space {
@@ -52,25 +47,19 @@ impl Space {
             lift[2] / BLACK_RISE_KEYS,
             h[8],
         ];
-        let middle = SpacePoint {
-            x: fit.white_keys as f64 / 2.0,
-            depth: KEYBED_DEPTH_KEYS / 2.0,
-            height: 0.0,
-        };
         Self {
             projection,
             camera: camera_of(&projection),
             keybed_depth: KEYBED_DEPTH_KEYS,
-            keybed_distance: homogeneous(&projection, middle)[2],
-            nearest_share: NEAREST_SHARE,
         }
     }
 
     /// Where a point of the keyboard's space lands in the frame, in fractions, or None where it
-    /// sits on the lens or behind it.
+    /// sits behind the camera. The fit's homography has h[8] = 1, so the keybed's first corner
+    /// projects with s = 1 and every point in front of the camera with a positive s.
     pub fn project(&self, p: SpacePoint) -> Option<Point> {
         let [u, v, s] = homogeneous(&self.projection, p);
-        (s / self.keybed_distance >= self.nearest_share).then(|| Point { x: u / s, y: v / s })
+        (s > 0.0).then(|| Point { x: u / s, y: v / s })
     }
 }
 

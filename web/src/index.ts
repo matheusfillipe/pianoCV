@@ -29,5 +29,4 @@ export {
 } from "./keycore";
 export { createKeyNet, KEYNET_URL, type KeyNetRunner } from "./keynetrunner";
 export { createKeyNetSession, type KeyNetSession } from "./keynetsession";
-export { isBlack, type KeyUnits, keyUnits, whiteIndex } from "./keys";
 export type { Size } from "./keyspace";

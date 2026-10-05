@@ -26,6 +26,8 @@ test("every key of a fitted 76-key board comes out once, low to high", () => {
   expect(keys.map((key) => key.semitone)).toEqual(
     Array.from({ length: 76 }, (_, i) => i),
   );
+  expect(keys[0]?.from).toBe(0);
+  expect(keys.at(-1)?.to).toBe(fit.whiteKeys);
   for (const key of keys.filter((k) => k.black)) {
     expect(key.bar.length).toBeGreaterThanOrEqual(4);
   }

@@ -6,5 +6,4 @@ export { applyHomography, findHomography, type Homography, type Point, } from ".
 export { type KeyboardTemplate, type KeyNetFit, type KeyNetPeaks, type KeyNetStep, type KeyOutline, type KeySpace, keyboardTemplate, keyOutlines, loadKeycore, type SpacePoint, } from "./keycore";
 export { createKeyNet, KEYNET_URL, type KeyNetRunner } from "./keynetrunner";
 export { createKeyNetSession, type KeyNetSession } from "./keynetsession";
-export { isBlack, type KeyUnits, keyUnits, whiteIndex } from "./keys";
 export type { Size } from "./keyspace";

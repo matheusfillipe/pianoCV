@@ -290,6 +290,9 @@ pub struct KeyOutline {
     pub black: bool,
     /// Semitones above the board's first white key.
     pub semitone: i32,
+    /// Where the key starts and ends along the board, in white keys from its first key.
+    pub from: f64,
+    pub to: f64,
     /// The key's outline in frame fractions, a black key's raised top and footprint together.
     pub bar: Vec<Point>,
     /// The face the key shows on top: a white key's own face and a black key's raised top.
@@ -298,6 +301,7 @@ pub struct KeyOutline {
 
 /// Every key of the fitted board once, low to high, flat on the keybed until the fit has a lift.
 pub fn key_outlines(fit: &Fit) -> Vec<KeyOutline> {
+    let layout = board_keys(fit.white_keys, fit.phase);
     let faces = key_net_faces(fit, &fit.lift.unwrap_or([0.0; 3]));
     let mut faces = faces.iter().peekable();
     let mut keys = Vec::new();
@@ -306,9 +310,14 @@ pub fn key_outlines(fit: &Fit) -> Vec<KeyOutline> {
             Some(footprint) => key_hull(&face.bar, &footprint.bar),
             None => face.bar.to_vec(),
         };
+        let Some(span) = layout.iter().find(|key| key.semitone == face.semitone) else {
+            continue;
+        };
         keys.push(KeyOutline {
             black: face.black,
             semitone: face.semitone,
+            from: span.from,
+            to: span.to,
             bar,
             top: face.bar,
         });
