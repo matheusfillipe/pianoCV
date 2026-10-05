@@ -9,7 +9,7 @@ import {
   createCalibration,
 } from "./calibrate";
 import { drawHands, drawKeys, drawQuad } from "./draw";
-import { createEffects } from "./effects";
+import { createEffects, lowestPitchFor } from "./effects";
 import { createHandTracker, type HandTracker } from "./hands";
 import { createHud, type Hud } from "./hud";
 import { type KeyNetFit, type KeyOutline, keyOutlines } from "./keycore";
@@ -186,7 +186,14 @@ function startLoop(
         drawKeys(ctx, keys, box.w, box.h);
       }
       if (hud.state.glow) {
-        effects.draw(ctx, keys, box.w, box.h, now);
+        effects.draw(
+          ctx,
+          keys,
+          lowestPitchFor(fit.whiteKeys, fit.phase),
+          box.w,
+          box.h,
+          now,
+        );
         if (segmented) {
           drawOcclusion(ctx, video, segmented, box.w, box.h);
         }

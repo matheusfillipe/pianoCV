@@ -5,7 +5,7 @@ import type { Bar, Size } from "./keyspace";
 export type DetectedKey = {
   readonly bar: Bar;
   readonly black: boolean;
-  /** Semitones above the board's first white key, which is what maps a MIDI note onto it. */
+  /** Semitones above the board's first white key. */
   readonly semitone: number;
 };
 
@@ -159,7 +159,6 @@ export type KeyOutline = {
   readonly black: boolean;
   /** Semitones above the board's first white key. */
   readonly semitone: number;
-  readonly note: number;
   /** The key's outline in frame fractions, a black key's raised top and footprint together. */
   readonly bar: readonly Point[];
   /** The face the key shows on top: a white key's own face and a black key's raised top. */

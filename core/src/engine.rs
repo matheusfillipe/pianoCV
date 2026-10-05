@@ -50,7 +50,8 @@ pub struct Board {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Key {
-    pub note: i32,
+    /// Semitones above the board's first white key.
+    pub semitone: i32,
     pub black: bool,
     /// The key's polygon in frame pixels.
     pub outline: Vec<Point>,
@@ -73,7 +74,7 @@ fn keys_of(fit: &Fit, size: Size) -> Vec<Key> {
     key_outlines(fit)
         .into_iter()
         .map(|key| Key {
-            note: key.note,
+            semitone: key.semitone,
             black: key.black,
             outline: key
                 .bar

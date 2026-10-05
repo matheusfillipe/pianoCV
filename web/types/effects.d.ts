@@ -4,6 +4,9 @@ declare global {
         pianocvPlay?: (pitch: number, velocity: number) => void;
     }
 }
+/** The lowest MIDI pitch of a standard board with this many white keys starting on this
+ * letter, or null when it does not match any standard size. */
+export declare function lowestPitchFor(whiteKeys: number, phase: string): number | null;
 type NoteState = {
     readonly velocity: number;
     readonly releasedAt: number | null;
@@ -22,9 +25,9 @@ export declare function prune(state: EffectsState, now: number): EffectsState;
 export type Effects = {
     readonly draw: (ctx: CanvasRenderingContext2D, faces: readonly {
         readonly black: boolean;
-        readonly note: number;
+        readonly semitone: number;
         readonly bar: readonly Point[];
-    }[], w: number, h: number, now: number) => void;
+    }[], lowestPitch: number | null, w: number, h: number, now: number) => void;
 };
 export declare function createEffects(): Effects;
 export {};

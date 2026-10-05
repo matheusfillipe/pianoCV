@@ -13,7 +13,7 @@ beforeAll(() => {
   });
 });
 
-test("every key of a fitted 76-key board comes out once with its MIDI note", () => {
+test("every key of a fitted 76-key board comes out once, low to high", () => {
   const fit: KeyNetFit = JSON.parse(
     keycore.fit_keyboard(
       JSON.stringify(steepBoard.peaks),
@@ -23,8 +23,8 @@ test("every key of a fitted 76-key board comes out once with its MIDI note", () 
   );
   const keys = keyOutlines(fit);
   expect(keys).toHaveLength(76);
-  expect(keys.map((key) => key.note).sort((a, b) => a - b)).toEqual(
-    Array.from({ length: 76 }, (_, i) => 28 + i),
+  expect(keys.map((key) => key.semitone)).toEqual(
+    Array.from({ length: 76 }, (_, i) => i),
   );
   for (const key of keys.filter((k) => k.black)) {
     expect(key.bar.length).toBeGreaterThanOrEqual(4);

@@ -6,7 +6,7 @@ use crate::geom::{
     apply_homography, distance, invert_homography, solve, Homography, Mulberry32, Point,
     ScoredPoint, Size,
 };
-use crate::keys::{board_keys, first_pitch, keyboard_template, BLACK_KEY_DEPTH};
+use crate::keys::{board_keys, keyboard_template, BLACK_KEY_DEPTH};
 
 // how far along the board, in white keys, a top corner can sit from the bottom corner under it
 // once mapped back through the keybed's homography
@@ -290,7 +290,6 @@ pub struct KeyOutline {
     pub black: bool,
     /// Semitones above the board's first white key.
     pub semitone: i32,
-    pub note: i32,
     /// The key's outline in frame fractions, a black key's raised top and footprint together.
     pub bar: Vec<Point>,
     /// The face the key shows on top: a white key's own face and a black key's raised top.
@@ -299,7 +298,6 @@ pub struct KeyOutline {
 
 /// Every key of the fitted board once, low to high, flat on the keybed until the fit has a lift.
 pub fn key_outlines(fit: &Fit) -> Vec<KeyOutline> {
-    let lowest = first_pitch(fit.white_keys, fit.phase);
     let faces = key_net_faces(fit, &fit.lift.unwrap_or([0.0; 3]));
     let mut faces = faces.iter().peekable();
     let mut keys = Vec::new();
@@ -311,7 +309,6 @@ pub fn key_outlines(fit: &Fit) -> Vec<KeyOutline> {
         keys.push(KeyOutline {
             black: face.black,
             semitone: face.semitone,
-            note: lowest + face.semitone,
             bar,
             top: face.bar,
         });

@@ -93,36 +93,6 @@ pub fn key_units(pitch: i32) -> KeyUnits {
     }
 }
 
-/// The lowest MIDI pitch of a standard board, or `None` for any other size or starting letter.
-pub fn lowest_pitch(white_keys: usize, phase: Phase) -> Option<i32> {
-    match (white_keys, phase) {
-        (29 | 36, Phase::C) => Some(36),
-        (45, Phase::E) => Some(28),
-        (52, Phase::A) => Some(21),
-        _ => None,
-    }
-}
-
-/// The middle of a full piano, MIDI 21 to 108, where a board whose octave the picture cannot tell
-/// is centred.
-const PIANO_MIDDLE: f64 = (21.0 + 108.0) / 2.0;
-
-/// The MIDI pitch of a board's lowest key: a standard board's own, and for any other size the
-/// octave that centres the board where a full piano is centred, since one C looks exactly like the
-/// next.
-pub fn first_pitch(white_keys: usize, phase: Phase) -> i32 {
-    lowest_pitch(white_keys, phase).unwrap_or_else(|| {
-        let class = phase.pitch_class();
-        let reach = f64::from(
-            board_keys(white_keys, phase)
-                .last()
-                .map_or(0, |key| key.semitone),
-        );
-        let octave = ((PIANO_MIDDLE - reach / 2.0 - f64::from(class)) / 12.0).round();
-        class + 12 * octave as i32
-    })
-}
-
 fn first_white_pitch(phase: Phase) -> i32 {
     TEMPLATE_OCTAVE + phase.pitch_class()
 }

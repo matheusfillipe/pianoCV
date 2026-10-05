@@ -115,7 +115,7 @@ pub fn key_net_faces(fit_json: &str, lift: &[f64]) -> Result<String, JsError> {
     print(&lift::key_net_faces(&fit, &lift))
 }
 
-/// Every key of the fitted board once, low to high, as JSON: `{black, semitone, note, bar, top}`
+/// Every key of the fitted board once, low to high, as JSON: `{black, semitone, bar, top}`
 /// in frame fractions.
 #[wasm_bindgen]
 pub fn key_outlines(fit_json: &str) -> Result<String, JsError> {
