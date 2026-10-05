@@ -3,7 +3,7 @@ export { handModelUrl, skinModelUrl } from "./assets";
 export { type Box, buildSkinAlpha, createSkinSegmenter, type HandAlpha, handBoxes, type SkinSegmenter, } from "./handmask";
 export { createHandTracker, type HandTracker } from "./hands";
 export { applyHomography, findHomography, type Homography, type Point, } from "./homography";
-export { type DetectedKey, type KeyboardTemplate, type KeyNetFit, type KeyNetPeaks, type KeyNetStep, type KeyOutline, keyboardTemplate, keyNetFaces, keyOutlines, loadKeycore, } from "./keycore";
+export { type DetectedKey, type KeyboardTemplate, type KeyNetFit, type KeyNetPeaks, type KeyNetStep, type KeyOutline, type KeySpace, keyboardTemplate, keyNetFaces, keyOutlines, loadKeycore, type SpacePoint, } from "./keycore";
 export { createKeyNet, KEYNET_URL, type KeyNetRunner } from "./keynetrunner";
 export { createKeyNetSession, type KeyNetSession } from "./keynetsession";
 export { isBlack, type KeyUnits, keyUnits, whiteIndex } from "./keys";

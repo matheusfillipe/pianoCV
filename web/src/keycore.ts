@@ -51,6 +51,52 @@ export type KeyboardTemplate = {
   readonly blackHigh: readonly Point[];
 };
 
+/** A point in the keyboard's own space, in white-key widths: `x` along the board from its first
+ * key, `depth` from the keybed's far edge towards the player, `height` up off the white keys. */
+export type SpacePoint = {
+  readonly x: number;
+  readonly depth: number;
+  readonly height: number;
+};
+
+/** The keyboard's space as the camera sees it. */
+export type KeySpace = {
+  /** Where a point lands in the frame, in fractions, or null where it sits on the lens or behind
+   * it. */
+  readonly project: (point: SpacePoint) => Point | null;
+  /** Where the camera stands, or null for a view so far off that its rays are parallel. */
+  readonly camera: SpacePoint | null;
+  /** White-key widths from the keybed's far edge to the player's edge. */
+  readonly keybedDepth: number;
+};
+
+type SpaceJson = {
+  readonly projection: readonly number[];
+  readonly camera: SpacePoint | null;
+  readonly keybedDepth: number;
+  readonly keybedDistance: number;
+  readonly nearestShare: number;
+};
+
+function keySpaceOf(space: SpaceJson): KeySpace {
+  const m = space.projection;
+  return {
+    camera: space.camera,
+    keybedDepth: space.keybedDepth,
+    project: ({ x, depth, height }) => {
+      const row = (r: number): number =>
+        m[4 * r] * x +
+        m[4 * r + 1] * depth +
+        m[4 * r + 2] * height +
+        m[4 * r + 3];
+      const s = row(2);
+      return s / space.keybedDistance >= space.nearestShare
+        ? { x: row(0) / s, y: row(1) / s }
+        : null;
+    },
+  };
+}
+
 export type CropRequest = {
   readonly mode: "search" | "track";
   readonly width: number;
@@ -184,5 +230,10 @@ export class KeyNetLoop {
         nowMs,
       ),
     );
+  }
+
+  space(): KeySpace | null {
+    const space: SpaceJson | null = JSON.parse(this.session.space());
+    return space === null ? null : keySpaceOf(space);
   }
 }

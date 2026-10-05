@@ -22,10 +22,12 @@ export {
   type KeyNetPeaks,
   type KeyNetStep,
   type KeyOutline,
+  type KeySpace,
   keyboardTemplate,
   keyNetFaces,
   keyOutlines,
   loadKeycore,
+  type SpacePoint,
 } from "./keycore";
 export { createKeyNet, KEYNET_URL, type KeyNetRunner } from "./keynetrunner";
 export { createKeyNetSession, type KeyNetSession } from "./keynetsession";

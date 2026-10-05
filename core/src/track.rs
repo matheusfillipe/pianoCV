@@ -85,6 +85,11 @@ impl Default for OneEuroConfig {
     }
 }
 
+/// The lift's cutoff in hertz, about three seconds' average. Points high above the keys move by the
+/// lift times their height, so we hold it far steadier than the corners, and the camera stays put
+/// while someone plays.
+const LIFT_CUTOFF_HZ: f64 = 0.05;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModelFrame {
     pub presence: f64,
@@ -211,7 +216,11 @@ struct Smoother {
 impl Smoother {
     fn new(config: OneEuroConfig) -> Self {
         Self {
-            filters: vec![OneEuro::new(config.min_cutoff, config.beta, config.d_cutoff); 6],
+            filters: [
+                vec![OneEuro::new(config.min_cutoff, config.beta, config.d_cutoff); 4],
+                vec![OneEuro::new(LIFT_CUTOFF_HZ, 0.0, config.d_cutoff); 2],
+            ]
+            .concat(),
             last_lift: None,
             lift_jumps: 0,
         }

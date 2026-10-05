@@ -4,6 +4,7 @@ use crate::decode::{Peaks, SEARCH_SIZE, TRACK_HEIGHT, TRACK_WIDTH};
 use crate::fit::{to_pixels, Fit};
 use crate::geom::{apply_homography, find_homography, invert_homography, Homography, Point, Size};
 use crate::keys::BLACK_KEY_DEPTH;
+use crate::space::Space;
 use crate::track::{ModelFrame, Tracker};
 
 const END_MARGIN: f64 = 0.02;
@@ -371,6 +372,12 @@ impl Session {
 
     pub fn fit(&self) -> Option<&Fit> {
         self.fit.as_ref()
+    }
+
+    /// The keyboard's space under the current fit, once a lift is seen.
+    pub fn space(&self) -> Option<Space> {
+        let fit = self.fit.as_ref()?;
+        Some(Space::new(fit, &fit.lift?))
     }
 
     fn crop_around(&self) -> Option<[Point; 4]> {

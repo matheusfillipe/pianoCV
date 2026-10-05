@@ -9,6 +9,7 @@ pub mod input;
 pub mod keys;
 pub mod lift;
 pub mod session;
+pub mod space;
 pub mod track;
 pub mod wasm;
 
