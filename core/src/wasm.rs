@@ -105,16 +105,6 @@ pub fn estimate_lift(
     print(&lift::estimate_lift(&peaks, &fit, frame))
 }
 
-/// The per-key outlines to draw, as JSON, in frame fractions.
-#[wasm_bindgen]
-pub fn key_net_faces(fit_json: &str, lift: &[f64]) -> Result<String, JsError> {
-    let fit: Fit = parse(fit_json)?;
-    let lift: Lift = lift
-        .try_into()
-        .map_err(|_| JsError::new("a lift has 3 numbers"))?;
-    print(&lift::key_net_faces(&fit, &lift))
-}
-
 /// Every key of the fitted board once, low to high, as JSON: `{black, semitone, bar, top}`
 /// in frame fractions.
 #[wasm_bindgen]

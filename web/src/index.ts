@@ -16,7 +16,6 @@ export {
   type Point,
 } from "./homography";
 export {
-  type DetectedKey,
   type KeyboardTemplate,
   type KeyNetFit,
   type KeyNetPeaks,
@@ -24,7 +23,6 @@ export {
   type KeyOutline,
   type KeySpace,
   keyboardTemplate,
-  keyNetFaces,
   keyOutlines,
   loadKeycore,
   type SpacePoint,

@@ -2,13 +2,6 @@ import type { Homography, Point } from "./homography";
 import init, * as core from "./keycore-wasm/keycore.js";
 import type { Bar, Size } from "./keyspace";
 
-export type DetectedKey = {
-  readonly bar: Bar;
-  readonly black: boolean;
-  /** Semitones above the board's first white key. */
-  readonly semitone: number;
-};
-
 export type ScoredPoint = Point & { readonly score: number };
 
 export type KeyNetPeaks = {
@@ -143,16 +136,6 @@ export function refineHomography(
   pairs: readonly { readonly src: Point; readonly dst: Point }[],
 ): Homography | null {
   return JSON.parse(core.refine_homography(JSON.stringify(pairs)));
-}
-
-/** The keys to draw: flat on the keybed until the fit has a lift for the black keys' tops. */
-export function keyNetFaces(fit: KeyNetFit): DetectedKey[] {
-  return JSON.parse(
-    core.key_net_faces(
-      JSON.stringify(fit),
-      new Float64Array(fit.lift ?? [0, 0, 0]),
-    ),
-  );
 }
 
 export type KeyOutline = {

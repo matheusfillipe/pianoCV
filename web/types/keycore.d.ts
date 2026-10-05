@@ -1,11 +1,5 @@
 import type { Homography, Point } from "./homography";
 import type { Bar, Size } from "./keyspace";
-export type DetectedKey = {
-    readonly bar: Bar;
-    readonly black: boolean;
-    /** Semitones above the board's first white key. */
-    readonly semitone: number;
-};
 export type ScoredPoint = Point & {
     readonly score: number;
 };
@@ -82,8 +76,6 @@ export declare function refineHomography(pairs: readonly {
     readonly src: Point;
     readonly dst: Point;
 }[]): Homography | null;
-/** The keys to draw: flat on the keybed until the fit has a lift for the black keys' tops. */
-export declare function keyNetFaces(fit: KeyNetFit): DetectedKey[];
 export type KeyOutline = {
     readonly black: boolean;
     /** Semitones above the board's first white key. */
