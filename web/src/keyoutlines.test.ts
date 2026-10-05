@@ -1,8 +1,12 @@
 import { readFileSync } from "node:fs";
 import { beforeAll, expect, test } from "vitest";
 import steepBoard from "./fixtures/steep-board-peaks.json";
-import type { KeyNetFit } from "./keycore";
-import { keyOutlines } from "./keycore";
+import {
+  bendPoint,
+  type KeyNetFit,
+  keyOutlines,
+  straightenPoint,
+} from "./keycore";
 import * as keycore from "./keycore-wasm/keycore.js";
 
 beforeAll(() => {
@@ -30,5 +34,18 @@ test("every key of a fitted 76-key board comes out once, low to high", () => {
   expect(keys.at(-1)?.to).toBe(fit.whiteKeys);
   for (const key of keys.filter((k) => k.black)) {
     expect(key.bar.length).toBeGreaterThanOrEqual(4);
+  }
+});
+
+test("bending a straightened point brings it back where the camera saw it", () => {
+  const lens = { k: -0.2, aspect: 16 / 9 };
+  for (const p of [
+    { x: 0.1, y: 0.2 },
+    { x: 0.9, y: 0.85 },
+    { x: 0.5, y: 0.5 },
+  ]) {
+    const back = bendPoint(lens, straightenPoint(lens, p));
+    expect(back.x).toBeCloseTo(p.x, 9);
+    expect(back.y).toBeCloseTo(p.y, 9);
   }
 });

@@ -982,3 +982,54 @@ mod input {
         assert!((out[0] - normalised(5.0, 0)).abs() < 1e-5);
     }
 }
+
+mod lens_bend {
+    use super::*;
+    use crate::lens::{estimate_bend, moved_peaks, straighten_peaks, Lens};
+
+    fn seen_through(lens: &Lens, view: [Point; 4]) -> (Peaks, Lock) {
+        let (white_keys, phase) = BOARDS[1];
+        let h = homography_for(white_keys, phase, &view);
+        let straight = synth_peaks(
+            white_keys,
+            phase,
+            &h,
+            Synth {
+                noise_px: 0.5,
+                ..Synth::default()
+            },
+        );
+        (
+            moved_peaks(&straight, |p| lens.bend(p)),
+            Lock { white_keys, phase },
+        )
+    }
+
+    /// The bend after a few looks, each fitting the board under the bend the last one found,
+    /// the way a session settles on its camera's lens.
+    fn bend_found(truth: Lens) -> f64 {
+        let (seen, lock) = seen_through(&truth, steep());
+        let mut lens = Lens { k: 0.0, ..truth };
+        for _ in 0..4 {
+            let fit = fit_keyboard(&straighten_peaks(&seen, &lens), Some(lock), FRAME, None)
+                .expect("a fit under the lock");
+            lens.k = estimate_bend(&seen, &fit, &lens).expect("a bend");
+        }
+        lens.k
+    }
+
+    #[test]
+    fn finds_the_bend_of_a_wide_lens_from_the_keys() {
+        let k = bend_found(Lens {
+            k: -0.15,
+            aspect: FRAME.width / FRAME.height,
+        });
+        assert!((k + 0.15).abs() < 0.02, "{k}");
+    }
+
+    #[test]
+    fn finds_no_bend_through_a_straight_lens() {
+        let k = bend_found(Lens::straight(FRAME));
+        assert!(k.abs() < 0.02, "{k}");
+    }
+}

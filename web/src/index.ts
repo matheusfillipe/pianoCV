@@ -6,6 +6,7 @@ export {
   type Point,
 } from "./homography";
 export {
+  bendPoint,
   type KeyboardTemplate,
   type KeyNetFit,
   type KeyNetPeaks,
@@ -13,7 +14,9 @@ export {
   type KeyOutline,
   keyboardTemplate,
   keyOutlines,
+  type Lens,
   loadKeycore,
+  straightenPoint,
 } from "./keycore";
 export { createKeyNet, KEYNET_URL, type KeyNetRunner } from "./keynetrunner";
 export { createKeyNetSession, type KeyNetSession } from "./keynetsession";

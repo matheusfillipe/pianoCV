@@ -28,7 +28,23 @@ export type KeyNetFit = {
     /** How the black keys' tops sit over the keybed in this view, null until their top corners
      * have been seen. */
     readonly lift: readonly [number, number, number] | null;
+    /** The bend the board was fitted under: the homography, quad and lift live in the frame
+     * with it taken out, and `bendPoint` carries a point of them into the picture. */
+    readonly lens: Lens;
 };
+/** How the camera's lens bends straight lines, as one radial term about the middle of the
+ * frame: a point at `r` from the middle, measured so the frame's corners sit at 1, is pulled
+ * in to `r / (1 + k r²)` once the bend is taken out. */
+export type Lens = {
+    readonly k: number;
+    /** The frame's width over its height, so the bend is round in pixels. */
+    readonly aspect: number;
+};
+/** Where a point of the picture, in frame fractions, lies once the lens's bend is taken out. */
+export declare function straightenPoint(lens: Lens, p: Point): Point;
+/** Where a straightened point lands in the picture the camera films, the inverse of
+ * `straightenPoint`. */
+export declare function bendPoint(lens: Lens, p: Point): Point;
 export type KeyboardTemplate = {
     /** Back-low, back-high, front-high, front-low, in white-key units: x runs 0 to `whiteKeys`
      * along the board, y runs 0 (back, under the black keys) to 1 (the player's edge). */

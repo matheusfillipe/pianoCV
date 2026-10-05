@@ -4,6 +4,7 @@ use crate::decode::{Peaks, SEARCH_SIZE, TRACK_HEIGHT, TRACK_WIDTH};
 use crate::fit::{to_pixels, Fit};
 use crate::geom::{apply_homography, find_homography, invert_homography, Homography, Point, Size};
 use crate::keys::BLACK_KEY_DEPTH;
+use crate::lens::{estimate_bend, straighten_peaks, Lens};
 use crate::track::{ModelFrame, Tracker};
 
 const END_MARGIN: f64 = 0.02;
@@ -352,7 +353,15 @@ pub struct Session {
     seed: Option<[Point; 4]>,
     seed_tries: u32,
     rectified: bool,
+    lens: Option<Lens>,
+    since_bend: u32,
 }
+
+/// How many tracked frames pass between two looks at the lens's bend, and how far each look
+/// moves the bend we hold. The camera does not move while someone plays, so a slow average
+/// of many frames settles on its lens and shrugs off a frame that read the keys badly.
+const BEND_EVERY: u32 = 10;
+const BEND_FOLLOW: f64 = 0.2;
 
 impl Session {
     pub fn new(rectified: bool) -> Self {
@@ -362,6 +371,8 @@ impl Session {
             seed: None,
             seed_tries: 0,
             rectified,
+            lens: None,
+            since_bend: 0,
         }
     }
 
@@ -373,8 +384,12 @@ impl Session {
         self.fit.as_ref()
     }
 
+    /// Where the board stands in the picture the camera films, with the lens's bend put back.
     fn crop_around(&self) -> Option<[Point; 4]> {
-        self.fit.as_ref().map(|fit| fit.quad).or(self.seed)
+        self.fit
+            .as_ref()
+            .map(|fit| fit.quad.map(|corner| fit.lens.bend(corner)))
+            .or(self.seed)
     }
 
     pub fn next_crop(&self, frame: Size) -> CropRequest {
@@ -427,9 +442,25 @@ impl Session {
             };
         };
         let was_tracking = self.fit.is_some();
-        self.fit = self.tracker.update(result, size, now_ms);
+        let mut lens = *self.lens.get_or_insert(Lens::straight(size));
+        let straight = ModelFrame {
+            presence: result.presence,
+            peaks: straighten_peaks(&result.peaks, &lens),
+        };
+        self.fit = self.tracker.update(&straight, size, now_ms).map(|fit| {
+            self.since_bend += 1;
+            if self.since_bend >= BEND_EVERY {
+                self.since_bend = 0;
+                if let Some(k) = estimate_bend(&result.peaks, &fit, &lens) {
+                    lens.k += BEND_FOLLOW * (k - lens.k);
+                    self.lens = Some(lens);
+                }
+            }
+            Fit { lens, ..fit }
+        });
         if let Some(fit) = &self.fit {
-            if !was_tracking && !ends_inside_crop(&fit.quad, &crop_around, size, self.rectified) {
+            let seen = fit.quad.map(|corner| fit.lens.bend(corner));
+            if !was_tracking && !ends_inside_crop(&seen, &crop_around, size, self.rectified) {
                 self.tracker.reset();
                 self.fit = None;
                 self.seed = Some(widen_quad(&crop_around, SEED_WIDEN));

@@ -7,6 +7,7 @@ use crate::geom::{
     Mulberry32, Point, ScoredPoint, Size,
 };
 use crate::keys::{keyboard_template, KeyboardTemplate, Phase, BLACK_KEY_DEPTH, STANDARD_BOARDS};
+use crate::lens::Lens;
 
 /// What takes a point on the keybed to the same point on the black keys' tops, in the fit
 /// homography's own homogeneous frame.
@@ -35,6 +36,10 @@ pub struct Fit {
     pub gap_spacing: Option<f64>,
     pub reprojection_error: f64,
     pub lift: Option<Lift>,
+    /// The bend the board was fitted under: the homography, quad and lift all live in the
+    /// frame with it taken out, and `lens.bend` carries a point of them into the picture.
+    #[serde(default)]
+    pub lens: Lens,
 }
 
 impl Fit {
@@ -679,6 +684,7 @@ fn fit_hypothesis(
         gap_spacing: gap_spacing(peaks, &refined),
         reprojection_error: median_error,
         lift: None,
+        lens: Lens::default(),
     })
 }
 

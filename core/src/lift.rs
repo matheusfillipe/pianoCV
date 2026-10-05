@@ -299,7 +299,8 @@ pub struct KeyOutline {
     pub top: [Point; 4],
 }
 
-/// Every key of the fitted board once, low to high, flat on the keybed until the fit has a lift.
+/// Every key of the fitted board once, low to high, flat on the keybed until the fit has a lift,
+/// where the camera sees it, with its lens's bend.
 pub fn key_outlines(fit: &Fit) -> Vec<KeyOutline> {
     let layout = board_keys(fit.white_keys, fit.phase);
     let faces = key_net_faces(fit, &fit.lift.unwrap_or([0.0; 3]));
@@ -313,13 +314,14 @@ pub fn key_outlines(fit: &Fit) -> Vec<KeyOutline> {
         let Some(span) = layout.iter().find(|key| key.semitone == face.semitone) else {
             continue;
         };
+        let seen = |p: &Point| fit.lens.bend(*p);
         keys.push(KeyOutline {
             black: face.black,
             semitone: face.semitone,
             from: span.from,
             to: span.to,
-            bar,
-            top: face.bar,
+            bar: bar.iter().map(seen).collect(),
+            top: face.bar.each_ref().map(seen),
         });
     }
     keys

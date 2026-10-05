@@ -7,6 +7,7 @@ pub mod fit;
 pub mod geom;
 pub mod input;
 pub mod keys;
+pub mod lens;
 pub mod lift;
 pub mod session;
 pub mod track;

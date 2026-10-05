@@ -12,7 +12,12 @@ import { drawHands, drawKeys, drawQuad } from "./draw";
 import { createEffects, lowestPitchFor } from "./effects";
 import { createHandTracker, type HandTracker } from "./hands";
 import { createHud, type Hud } from "./hud";
-import { type KeyNetFit, type KeyOutline, keyOutlines } from "./keycore";
+import {
+  bendPoint,
+  type KeyNetFit,
+  type KeyOutline,
+  keyOutlines,
+} from "./keycore";
 import { createKeyNet, KEYNET_URL, type KeyNetRunner } from "./keynetrunner";
 import { createKeyNetSession } from "./keynetsession";
 import { createLab } from "./lab";
@@ -179,7 +184,14 @@ function startLoop(
     }
     const fit = keyNetSession?.fit() ?? null;
     if (fit) {
-      drawQuad(ctx, [...fit.quad], box.w, box.h, AUTO_COLOR, "keybed");
+      drawQuad(
+        ctx,
+        fit.quad.map((corner) => bendPoint(fit.lens, corner)),
+        box.w,
+        box.h,
+        AUTO_COLOR,
+        "keybed",
+      );
       const keys = keyOutlines(fit);
       window.pianocvDrawnKeys = keys;
       if (hud.state.keys) {
