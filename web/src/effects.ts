@@ -1,5 +1,6 @@
 import { outsideBlackKeys, tracePolygon } from "./draw";
 import type { Point } from "./homography";
+import { isBlack } from "./keys";
 
 declare global {
   interface Window {
@@ -8,25 +9,39 @@ declare global {
   }
 }
 
-/** The sizes keyboards are built in, told apart by the letter of their first white key, with the
- * MIDI note that first key plays. */
-const STANDARD_BOARDS = [
-  { phase: "C", whiteKeys: 29, lowestPitch: 36 },
-  { phase: "C", whiteKeys: 36, lowestPitch: 36 },
-  { phase: "E", whiteKeys: 45, lowestPitch: 28 },
-  { phase: "A", whiteKeys: 52, lowestPitch: 21 },
-] as const;
+const LETTER_SEMITONES: Readonly<Record<string, number>> = {
+  C: 0,
+  D: 2,
+  E: 4,
+  F: 5,
+  G: 7,
+  A: 9,
+  B: 11,
+};
 
-/** The lowest MIDI pitch of a standard board with this many white keys starting on this
- * letter, or null when it does not match any standard size. */
+/** The middle of a full piano, MIDI 21 to 108. */
+const PIANO_MIDDLE = (21 + 108) / 2;
+
+/** The MIDI pitch of the lowest key of a board with this many white keys starting on this
+ * letter. We take the octave that centres the board where a full piano is centred, which is
+ * where every standard size sits, since one C looks exactly like the next. */
 export function lowestPitchFor(
   whiteKeys: number,
   phase: string,
 ): number | null {
-  const board = STANDARD_BOARDS.find(
-    (b) => b.whiteKeys === whiteKeys && b.phase === phase,
-  );
-  return board?.lowestPitch ?? null;
+  const first = LETTER_SEMITONES[phase];
+  if (first === undefined) {
+    return null;
+  }
+  let pitch = first;
+  for (let whites = 1; whites < whiteKeys; ) {
+    pitch += 1;
+    if (!isBlack(pitch)) {
+      whites += 1;
+    }
+  }
+  const reach = pitch - first;
+  return first + 12 * Math.round((PIANO_MIDDLE - reach / 2 - first) / 12);
 }
 
 type NoteState = {

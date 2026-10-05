@@ -4,8 +4,9 @@ declare global {
         pianocvPlay?: (pitch: number, velocity: number) => void;
     }
 }
-/** The lowest MIDI pitch of a standard board with this many white keys starting on this
- * letter, or null when it does not match any standard size. */
+/** The MIDI pitch of the lowest key of a board with this many white keys starting on this
+ * letter. We take the octave that centres the board where a full piano is centred, which is
+ * where every standard size sits, since one C looks exactly like the next. */
 export declare function lowestPitchFor(whiteKeys: number, phase: string): number | null;
 type NoteState = {
     readonly velocity: number;

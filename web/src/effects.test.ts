@@ -16,9 +16,13 @@ describe("lowestPitchFor", () => {
     expect(lowestPitchFor(52, "A")).toBe(21);
   });
 
-  it("returns null for a board that matches no standard size", () => {
-    expect(lowestPitchFor(40, "C")).toBeNull();
-    expect(lowestPitchFor(29, "D")).toBeNull();
+  it("centres a board of any other size where a full piano is centred", () => {
+    // Fifteen white keys from a C is a 25-key board, C3 to C5.
+    expect(lowestPitchFor(15, "C")).toBe(48);
+  });
+
+  it("numbers nothing for a letter that is not a key", () => {
+    expect(lowestPitchFor(29, "H")).toBeNull();
   });
 });
 
