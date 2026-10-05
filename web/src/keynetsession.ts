@@ -4,7 +4,6 @@ import {
   KeyNetLoop,
   type KeyNetPeaks,
   type KeyNetStep,
-  type KeySpace,
   prepareInput,
 } from "./keycore";
 import type { KeyNetRunner } from "./keynetrunner";
@@ -24,9 +23,6 @@ export type KeyNetSession = {
   readonly fit: () => KeyNetFit | null;
   /** The peaks the latest run decoded. */
   readonly peaks: () => KeyNetPeaks | null;
-  /** The keyboard's space under the latest fit; null until the black keys'
-   * tops have been seen. */
-  readonly space: () => KeySpace | null;
   /** Runs the model once on the frame and moves the session on; null while a run is in flight. */
   readonly step: (
     frame: CanvasImageSource,
@@ -58,12 +54,10 @@ export function createKeyNetSession(keyNet: KeyNetRunner): KeyNetSession {
   );
   let fit: KeyNetFit | null = null;
   let peaks: KeyNetPeaks | null = null;
-  let space: KeySpace | null = null;
   let busy = false;
   return {
     fit: () => fit,
     peaks: () => peaks,
-    space: () => space,
     step: async (frame, size, now) => {
       if (busy) {
         return null;
@@ -99,7 +93,6 @@ export function createKeyNetSession(keyNet: KeyNetRunner): KeyNetSession {
         );
         const result = loop.step(outputs.presence, peaks, size, now);
         fit = result.fit;
-        space = loop.space();
         return result;
       } finally {
         busy = false;

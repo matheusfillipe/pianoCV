@@ -2,14 +2,14 @@ import {
   ImageSegmenter,
   type ImageSegmenterResult,
 } from "@mediapipe/tasks-vision";
-import { type RuntimeAssets, skinModelUrl } from "./assets";
+import { type MediaPipeAssets, skinModelUrl } from "./assets";
 
 export interface OcclusionMask {
   segment(frame: HTMLVideoElement, timestampMs: number): ImageSegmenterResult;
 }
 
 export async function createOcclusionMask(
-  assets: RuntimeAssets,
+  assets: MediaPipeAssets,
 ): Promise<OcclusionMask> {
   const segmenter = await ImageSegmenter.createFromOptions(
     {

@@ -3,14 +3,14 @@ import {
   type HandLandmarkerResult,
   type ImageSource,
 } from "@mediapipe/tasks-vision";
-import { handModelUrl, type RuntimeAssets } from "./assets";
+import { handModelUrl, type MediaPipeAssets } from "./assets";
 
 export interface HandTracker {
   detect(frame: ImageSource, timestampMs: number): HandLandmarkerResult;
 }
 
 export async function createHandTracker(
-  assets: RuntimeAssets,
+  assets: MediaPipeAssets,
 ): Promise<HandTracker> {
   const start = (delegate: "GPU" | "CPU"): Promise<HandLandmarker> =>
     HandLandmarker.createFromOptions(

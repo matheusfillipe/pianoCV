@@ -1,7 +1,7 @@
 {
   "name": "pianocv",
   "version": "0.2.0",
-  "description": "Finds every key of a piano or keyboard in a camera image, live: the KeyNet runtime and its Rust keyboard core",
+  "description": "Finds a piano or keyboard in a camera image and outlines every key, live: the KeyNet runtime and its Rust keyboard core",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
@@ -18,7 +18,6 @@
     "!web/src/fixtures"
   ],
   "peerDependencies": {
-    "@mediapipe/tasks-vision": "^1.0.1",
     "onnxruntime-web": "^1.29.0"
   },
   "repository": {

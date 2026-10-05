@@ -5,7 +5,7 @@ import {
   type ImageSegmenterResult,
   type ImageSource,
 } from "@mediapipe/tasks-vision";
-import { type RuntimeAssets, skinModelUrl } from "./assets";
+import { type MediaPipeAssets, skinModelUrl } from "./assets";
 
 // selfie_multiclass categories: 0 background, 1 hair, 2 body skin, 3 face skin, 4 clothes, 5 other
 const BODY_SKIN = 2;
@@ -16,7 +16,7 @@ export interface SkinSegmenter {
 }
 
 export async function createSkinSegmenter(
-  assets: RuntimeAssets,
+  assets: MediaPipeAssets,
 ): Promise<SkinSegmenter> {
   const vision = await FilesetResolver.forVisionTasks();
   const files = {

@@ -1,2 +1,2 @@
-import type { RuntimeAssets } from "./assets";
-export declare const viteAssets: RuntimeAssets;
+import type { MediaPipeAssets, RuntimeAssets } from "./assets";
+export declare const viteAssets: RuntimeAssets & MediaPipeAssets;

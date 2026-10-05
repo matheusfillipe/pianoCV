@@ -1,10 +1,10 @@
 import { type HandLandmarkerResult, type ImageSegmenterResult, type ImageSource } from "@mediapipe/tasks-vision";
-import { type RuntimeAssets } from "./assets";
+import { type MediaPipeAssets } from "./assets";
 export interface SkinSegmenter {
     segment(frame: ImageSource, timestampMs: number): ImageSegmenterResult;
     close(): void;
 }
-export declare function createSkinSegmenter(assets: RuntimeAssets): Promise<SkinSegmenter>;
+export declare function createSkinSegmenter(assets: MediaPipeAssets): Promise<SkinSegmenter>;
 export interface Box {
     x0: number;
     y0: number;

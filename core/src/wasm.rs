@@ -216,9 +216,4 @@ impl KeyNetSession {
         };
         print(&self.0.step(&frame, size, now_ms))
     }
-
-    /// The keyboard's space under the current fit, as JSON, or `null` until a lift is seen.
-    pub fn space(&self) -> Result<String, JsError> {
-        print(&self.0.space())
-    }
 }

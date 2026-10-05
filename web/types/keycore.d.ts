@@ -40,22 +40,6 @@ export type KeyboardTemplate = {
     readonly blackLow: readonly Point[];
     readonly blackHigh: readonly Point[];
 };
-/** A point in the keyboard's own space, in white-key widths: `x` along the board from its first
- * key, `depth` from the keybed's far edge towards the player, `height` up off the white keys. */
-export type SpacePoint = {
-    readonly x: number;
-    readonly depth: number;
-    readonly height: number;
-};
-/** The keyboard's space as the camera sees it. */
-export type KeySpace = {
-    /** Where a point lands in the frame, in fractions, or null where it sits behind the camera. */
-    readonly project: (point: SpacePoint) => Point | null;
-    /** Where the camera stands, or null for a view so far off that its rays are parallel. */
-    readonly camera: SpacePoint | null;
-    /** White-key widths from the keybed's far edge to the player's edge. */
-    readonly keybedDepth: number;
-};
 export type CropRequest = {
     readonly mode: "search" | "track";
     readonly width: number;
@@ -96,5 +80,4 @@ export declare class KeyNetLoop {
     constructor(rectified: boolean);
     nextCrop(frame: Size): CropRequest;
     step(presence: number, peaks: KeyNetPeaks, frame: Size, nowMs: number): KeyNetStep;
-    space(): KeySpace | null;
 }

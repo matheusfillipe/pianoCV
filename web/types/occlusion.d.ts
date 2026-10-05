@@ -1,9 +1,9 @@
 import { type ImageSegmenterResult } from "@mediapipe/tasks-vision";
-import { type RuntimeAssets } from "./assets";
+import { type MediaPipeAssets } from "./assets";
 export interface OcclusionMask {
     segment(frame: HTMLVideoElement, timestampMs: number): ImageSegmenterResult;
 }
-export declare function createOcclusionMask(assets: RuntimeAssets): Promise<OcclusionMask>;
+export declare function createOcclusionMask(assets: MediaPipeAssets): Promise<OcclusionMask>;
 /** body-skin (hands and arms) and clothes (sleeves) both occlude the glow. */
 export declare const OCCLUDING_CATEGORIES: ReadonlySet<number>;
 /** Draws the camera's own pixels back on top wherever the mask says hand, arm or sleeve, so

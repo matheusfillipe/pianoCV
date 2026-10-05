@@ -3,7 +3,10 @@
 export interface RuntimeAssets {
   /** onnxruntime-web's WebGPU build's wasm. */
   readonly ortGpuWasm: string;
-  /** MediaPipe's loader script and its wasm. */
+}
+
+/** MediaPipe's loader script and its wasm, which only the demo's hand models load. */
+export interface MediaPipeAssets {
   readonly mediapipeLoader: string;
   readonly mediapipeWasm: string;
 }
