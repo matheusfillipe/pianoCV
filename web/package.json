@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "fix": "biome check --write .",
-    "types": "tsc -p tsconfig.types.json"
+    "types": "rm -rf types && tsc -p tsconfig.types.json"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",
