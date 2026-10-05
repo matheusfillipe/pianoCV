@@ -31,10 +31,12 @@ export type KeyNetSession = {
   ) => Promise<KeyNetStep | null>;
 };
 
-const grabCanvas = new OffscreenCanvas(1, 1);
-const grabContext = grabCanvas.getContext("2d", { willReadFrequently: true });
+let grabCanvas: OffscreenCanvas | null = null;
+let grabContext: OffscreenCanvasRenderingContext2D | null = null;
 
 function grab(frame: CanvasImageSource, size: Size): ImageData | null {
+  grabCanvas ??= new OffscreenCanvas(1, 1);
+  grabContext ??= grabCanvas.getContext("2d", { willReadFrequently: true });
   if (grabContext === null) {
     return null;
   }

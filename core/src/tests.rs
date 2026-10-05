@@ -8,7 +8,8 @@ use crate::geom::{
 };
 use crate::input::{crop_input, Pixels};
 use crate::keys::{
-    key_units, keyboard_template, white_index, KeyboardTemplate, Phase, BLACK_KEY_DEPTH,
+    first_pitch, key_units, keyboard_template, white_index, KeyboardTemplate, Phase,
+    BLACK_KEY_DEPTH,
 };
 use crate::lift::{estimate_lift, key_net_faces, lifted};
 use crate::session::{crop_for, crop_matrix, rectified_matrix, Mode, Session};
@@ -177,6 +178,21 @@ mod template {
             assert!((low.y - BLACK_KEY_DEPTH).abs() < 1e-9);
             assert!((high.y - BLACK_KEY_DEPTH).abs() < 1e-9);
         }
+    }
+
+    #[test]
+    fn numbers_a_standard_board_from_its_own_first_note() {
+        assert_eq!(first_pitch(52, Phase::A), 21);
+        assert_eq!(first_pitch(36, Phase::C), 36);
+        assert_eq!(first_pitch(45, Phase::E), 28);
+    }
+
+    #[test]
+    fn centres_a_board_of_any_other_size_where_a_full_piano_is_centred() {
+        // Forty-three white keys from an E is a 73-key board, E1 to E7 on every such board.
+        assert_eq!(first_pitch(43, Phase::E), 28);
+        // A 25-key board from a C sits in the middle of the piano, C3 to C5.
+        assert_eq!(first_pitch(15, Phase::C), 48);
     }
 
     #[test]

@@ -67,9 +67,18 @@ export declare function refineHomography(pairs: readonly {
 }[]): Homography | null;
 /** The keys to draw: flat on the keybed until the fit has a lift for the black keys' tops. */
 export declare function keyNetFaces(fit: KeyNetFit): DetectedKey[];
-/** The outline of a black key's top and front faces together, starting at the top's first
- * corner and wound the same way, so each point of it is the same spot of the key every frame. */
-export declare function keyHull(top: readonly Point[], front: readonly Point[]): Point[];
+export type KeyOutline = {
+    readonly black: boolean;
+    /** Semitones above the board's first white key. */
+    readonly semitone: number;
+    readonly note: number;
+    /** The key's outline in frame fractions, a black key's raised top and footprint together. */
+    readonly bar: readonly Point[];
+    /** The face the key shows on top: a white key's own face and a black key's raised top. */
+    readonly top: Bar;
+};
+/** Every key of the fitted board once, low to high, flat on the keybed until the fit has a lift. */
+export declare function keyOutlines(fit: KeyNetFit): KeyOutline[];
 export declare function decodeHeatmaps(heat: Float32Array, width: number, height: number, toFrame: Homography, offsets: Float32Array | null): KeyNetPeaks;
 export declare function prepareInput(rgba: Uint8ClampedArray, pixels: Size, crop: CropRequest): Float32Array;
 export declare class KeyNetLoop {

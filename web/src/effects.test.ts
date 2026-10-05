@@ -2,25 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   createEffectsState,
   glowLevel,
-  lowestPitchFor,
   noteOff,
   noteOn,
   prune,
 } from "./effects";
-
-describe("lowestPitchFor", () => {
-  it("maps every standard board to its lowest pitch", () => {
-    expect(lowestPitchFor(29, "C")).toBe(36);
-    expect(lowestPitchFor(36, "C")).toBe(36);
-    expect(lowestPitchFor(45, "E")).toBe(28);
-    expect(lowestPitchFor(52, "A")).toBe(21);
-  });
-
-  it("returns null for a board that matches no standard size", () => {
-    expect(lowestPitchFor(40, "C")).toBeNull();
-    expect(lowestPitchFor(29, "D")).toBeNull();
-  });
-});
 
 describe("glow state", () => {
   it("jumps to a level from velocity on note on", () => {

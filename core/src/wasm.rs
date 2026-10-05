@@ -115,6 +115,13 @@ pub fn key_net_faces(fit_json: &str, lift: &[f64]) -> Result<String, JsError> {
     print(&lift::key_net_faces(&fit, &lift))
 }
 
+/// Every key of the fitted board once, low to high, as JSON: `{black, semitone, note, bar, top}`
+/// in frame fractions.
+#[wasm_bindgen]
+pub fn key_outlines(fit_json: &str) -> Result<String, JsError> {
+    print(&lift::key_outlines(&parse(fit_json)?))
+}
+
 /// Template points `[{x, y}]` mapped onto the black keys' top plane, as JSON in frame fractions.
 #[wasm_bindgen]
 pub fn lift_points(homography: &[f64], lift: &[f64], points_json: &str) -> Result<String, JsError> {

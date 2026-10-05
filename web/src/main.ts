@@ -9,13 +9,12 @@ import {
   createCalibration,
 } from "./calibrate";
 import { drawHands, drawKeys, drawQuad } from "./draw";
-import { createEffects, lowestPitchFor } from "./effects";
+import { createEffects } from "./effects";
 import { createHandTracker, type HandTracker } from "./hands";
 import { createHud, type Hud } from "./hud";
-import type { KeyNetFit } from "./keycore";
+import { type KeyNetFit, type KeyOutline, keyOutlines } from "./keycore";
 import { createKeyNet, KEYNET_URL, type KeyNetRunner } from "./keynetrunner";
 import { createKeyNetSession } from "./keynetsession";
-import { type KeyOutline, keyOutlines } from "./keyoutlines";
 import { createLab } from "./lab";
 import {
   createOcclusionMask,
@@ -187,14 +186,7 @@ function startLoop(
         drawKeys(ctx, keys, box.w, box.h);
       }
       if (hud.state.glow) {
-        effects.draw(
-          ctx,
-          keys,
-          lowestPitchFor(fit.whiteKeys, fit.phase),
-          box.w,
-          box.h,
-          now,
-        );
+        effects.draw(ctx, keys, box.w, box.h, now);
         if (segmented) {
           drawOcclusion(ctx, video, segmented, box.w, box.h);
         }

@@ -8,27 +8,6 @@ declare global {
   }
 }
 
-/** The sizes keyboards are built in, told apart by the letter of their first white key, with the
- * MIDI note that first key plays. */
-const STANDARD_BOARDS = [
-  { phase: "C", whiteKeys: 29, lowestPitch: 36 },
-  { phase: "C", whiteKeys: 36, lowestPitch: 36 },
-  { phase: "E", whiteKeys: 45, lowestPitch: 28 },
-  { phase: "A", whiteKeys: 52, lowestPitch: 21 },
-] as const;
-
-/** The lowest MIDI pitch of a standard board with this many white keys starting on this
- * letter, or null when it does not match any standard size. */
-export function lowestPitchFor(
-  whiteKeys: number,
-  phase: string,
-): number | null {
-  const board = STANDARD_BOARDS.find(
-    (b) => b.whiteKeys === whiteKeys && b.phase === phase,
-  );
-  return board?.lowestPitch ?? null;
-}
-
 type NoteState = {
   readonly velocity: number;
   readonly releasedAt: number | null;
@@ -146,10 +125,9 @@ export type Effects = {
     ctx: CanvasRenderingContext2D,
     faces: readonly {
       readonly black: boolean;
-      readonly semitone: number;
+      readonly note: number;
       readonly bar: readonly Point[];
     }[],
-    lowestPitch: number | null,
     w: number,
     h: number,
     now: number,
@@ -168,15 +146,12 @@ export function createEffects(): Effects {
   connectMidi(play);
 
   return {
-    draw: (ctx, faces, lowestPitch, w, h, now) => {
+    draw: (ctx, faces, w, h, now) => {
       state = prune(state, now);
-      if (lowestPitch === null) {
-        return;
-      }
       ctx.fillStyle = `rgba(${GLOW_COLOR}, 1)`;
       const glow = (black: boolean): void => {
         for (const face of faces) {
-          const level = glowLevel(state, lowestPitch + face.semitone, now);
+          const level = glowLevel(state, face.note, now);
           if (face.black !== black || level <= 0) {
             continue;
           }

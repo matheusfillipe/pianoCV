@@ -1,12 +1,10 @@
 export type { RuntimeAssets } from "./assets";
 export { handModelUrl, skinModelUrl } from "./assets";
-export { lowestPitchFor } from "./effects";
 export { type Box, buildSkinAlpha, createSkinSegmenter, type HandAlpha, handBoxes, type SkinSegmenter, } from "./handmask";
 export { createHandTracker, type HandTracker } from "./hands";
 export { applyHomography, findHomography, type Homography, type Point, } from "./homography";
-export { type DetectedKey, type KeyboardTemplate, type KeyNetFit, type KeyNetPeaks, type KeyNetStep, keyboardTemplate, keyHull, keyNetFaces, loadKeycore, } from "./keycore";
+export { type DetectedKey, type KeyboardTemplate, type KeyNetFit, type KeyNetPeaks, type KeyNetStep, type KeyOutline, keyboardTemplate, keyNetFaces, keyOutlines, loadKeycore, } from "./keycore";
 export { createKeyNet, KEYNET_URL, type KeyNetRunner } from "./keynetrunner";
 export { createKeyNetSession, type KeyNetSession } from "./keynetsession";
-export { type KeyOutline, keyOutlines } from "./keyoutlines";
 export { isBlack, type KeyUnits, keyUnits, whiteIndex } from "./keys";
 export type { Size } from "./keyspace";

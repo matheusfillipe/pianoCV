@@ -10,8 +10,8 @@ use crate::decode::decode_heatmaps;
 use crate::fit::Fit;
 use crate::geom::{Point, Size};
 use crate::input::{crop_input, fractions_to_pixels, Pixels};
-use crate::keys::{lowest_pitch, Phase};
-use crate::lift::{key_hull, key_net_faces, Face};
+use crate::keys::Phase;
+use crate::lift::key_outlines;
 use crate::session::Session;
 use crate::track::ModelFrame;
 
@@ -50,8 +50,7 @@ pub struct Board {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Key {
-    /// MIDI note number, absent when the board is not a standard size.
-    pub note: Option<i32>,
+    pub note: i32,
     pub black: bool,
     /// The key's polygon in frame pixels.
     pub outline: Vec<Point>,
@@ -71,36 +70,21 @@ pub struct Engine {
 }
 
 fn keys_of(fit: &Fit, size: Size) -> Vec<Key> {
-    let to_pixels = |bar: &[Point]| -> Vec<Point> {
-        bar.iter()
-            .map(|p| Point {
-                x: p.x * size.width,
-                y: p.y * size.height,
-            })
-            .collect()
-    };
-    let lift = fit.lift.unwrap_or([0.0; 3]);
-    let faces = key_net_faces(fit, &lift);
-    let lowest = lowest_pitch(fit.white_keys, fit.phase);
-    let mut keys = Vec::new();
-    let mut faces = faces.iter().peekable();
-    while let Some(Face {
-        black,
-        semitone,
-        bar,
-    }) = faces.next()
-    {
-        let outline = match faces.next_if(|f| *black && f.black && f.semitone == *semitone) {
-            Some(footprint) => key_hull(bar, &footprint.bar),
-            None => bar.to_vec(),
-        };
-        keys.push(Key {
-            note: lowest.map(|lowest| lowest + semitone),
-            black: *black,
-            outline: to_pixels(&outline),
-        });
-    }
-    keys
+    key_outlines(fit)
+        .into_iter()
+        .map(|key| Key {
+            note: key.note,
+            black: key.black,
+            outline: key
+                .bar
+                .iter()
+                .map(|p| Point {
+                    x: p.x * size.width,
+                    y: p.y * size.height,
+                })
+                .collect(),
+        })
+        .collect()
 }
 
 impl Engine {
