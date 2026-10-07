@@ -10,7 +10,6 @@ pub mod keys;
 pub mod lens;
 pub mod lift;
 pub mod session;
-pub mod snap;
 pub mod track;
 pub mod wasm;
 

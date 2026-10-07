@@ -197,16 +197,11 @@ impl KeyNetSession {
         }))
     }
 
-    /// Moves the session on with the model's outputs and the `rgba` frame of `pixel_width` by
-    /// `pixel_height` it ran on, and returns `{fit, acquired}` as JSON.
-    #[allow(clippy::too_many_arguments)]
+    /// Moves the session on with the model's outputs and returns `{fit, acquired}` as JSON.
     pub fn step(
         &mut self,
         presence: f64,
         peaks_json: &str,
-        rgba: &[u8],
-        pixel_width: u32,
-        pixel_height: u32,
         frame_width: f64,
         frame_height: f64,
         now_ms: f64,
@@ -219,12 +214,6 @@ impl KeyNetSession {
             width: frame_width,
             height: frame_height,
         };
-        let (pixel_width, pixel_height) = (pixel_width as usize, pixel_height as usize);
-        let pixels = (rgba.len() == pixel_width * pixel_height * 4).then_some(Pixels {
-            rgba,
-            width: pixel_width,
-            height: pixel_height,
-        });
-        print(&self.0.step(&frame, pixels.as_ref(), size, now_ms))
+        print(&self.0.step(&frame, size, now_ms))
     }
 }

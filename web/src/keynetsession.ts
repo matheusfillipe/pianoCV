@@ -75,7 +75,7 @@ export function createKeyNetSession(keyNet: KeyNetRunner): KeyNetSession {
                 crop.width,
                 crop.height,
               );
-        if (outputs === null || pixels === null) {
+        if (outputs === null) {
           return { fit, acquired: false };
         }
         window.pianocvKeyNetMs ??= { search: [], track: [] };
@@ -91,14 +91,7 @@ export function createKeyNetSession(keyNet: KeyNetRunner): KeyNetSession {
           crop.matrix,
           outputs.offsets,
         );
-        const result = loop.step(
-          outputs.presence,
-          peaks,
-          pixels.data,
-          pixels,
-          size,
-          now,
-        );
+        const result = loop.step(outputs.presence, peaks, size, now);
         fit = result.fit;
         return result;
       } finally {

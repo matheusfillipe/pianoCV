@@ -197,12 +197,9 @@ export class KeyNetLoop {
     return JSON.parse(this.session.next_crop(frame.width, frame.height));
   }
 
-  /** `rgba` and `pixels` are the frame the model ran on, at whatever size it was read. */
   step(
     presence: number,
     peaks: KeyNetPeaks,
-    rgba: Uint8ClampedArray,
-    pixels: Size,
     frame: Size,
     nowMs: number,
   ): KeyNetStep {
@@ -210,9 +207,6 @@ export class KeyNetLoop {
       this.session.step(
         presence,
         JSON.stringify(peaks),
-        new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength),
-        pixels.width,
-        pixels.height,
         frame.width,
         frame.height,
         nowMs,
