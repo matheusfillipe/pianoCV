@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 use crate::decode::{Peaks, SEARCH_SIZE, TRACK_HEIGHT, TRACK_WIDTH};
 use crate::fit::{to_pixels, Fit};
 use crate::geom::{apply_homography, find_homography, invert_homography, Homography, Point, Size};
+use crate::input::Pixels;
 use crate::keys::BLACK_KEY_DEPTH;
 use crate::lens::{estimate_bend, straighten_peaks, Lens};
+use crate::snap::snap_back_gaps;
 use crate::track::{ModelFrame, Tracker};
 
 const END_MARGIN: f64 = 0.02;
@@ -428,7 +430,23 @@ impl Session {
         }
     }
 
-    pub fn step(&mut self, result: &ModelFrame, size: Size, now_ms: f64) -> Step {
+    /// `pixels` is the frame the model ran on, which the board's back edge is read off once a
+    /// board is held.
+    pub fn step(
+        &mut self,
+        result: &ModelFrame,
+        pixels: Option<&Pixels>,
+        size: Size,
+        now_ms: f64,
+    ) -> Step {
+        let snapped = match (&self.fit, pixels) {
+            (Some(fit), Some(pixels)) => ModelFrame {
+                presence: result.presence,
+                peaks: snap_back_gaps(&result.peaks, fit, pixels),
+            },
+            _ => result.clone(),
+        };
+        let result = &snapped;
         let Some(crop_around) = self.crop_around() else {
             self.seed = if result.presence >= SEED_PRESENCE {
                 coarse_quad(&result.peaks, size)

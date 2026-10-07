@@ -114,23 +114,22 @@ impl Engine {
         };
         let crop = self.session.next_crop(size);
         let to_pixels = fractions_to_pixels(&crop.matrix, size.width, size.height);
-        let input = crop_input(
-            &Pixels {
-                rgba,
-                width,
-                height,
-            },
-            &to_pixels,
-            crop.width,
-            crop.height,
-        );
+        let pixels = Pixels {
+            rgba,
+            width,
+            height,
+        };
+        let input = crop_input(&pixels, &to_pixels, crop.width, crop.height);
         let started = Instant::now();
         let (heat, presence) = self.run_model(input, crop.width, crop.height)?;
         let model_time = started.elapsed();
         let peaks = decode_heatmaps(&heat, crop.width, crop.height, &crop.matrix, None);
-        let step = self
-            .session
-            .step(&ModelFrame { presence, peaks }, size, timestamp_ms);
+        let step = self.session.step(
+            &ModelFrame { presence, peaks },
+            Some(&pixels),
+            size,
+            timestamp_ms,
+        );
         let keys = match step.fit {
             Some(fit) => Keys {
                 tracked: true,

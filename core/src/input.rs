@@ -19,7 +19,7 @@ impl Pixels<'_> {
         [f32::from(p[0]), f32::from(p[1]), f32::from(p[2])]
     }
 
-    fn bilinear(&self, x: f32, y: f32) -> [f32; 3] {
+    pub(crate) fn bilinear(&self, x: f32, y: f32) -> [f32; 3] {
         let (x0, y0) = (x.floor(), y.floor());
         let (fx, fy) = (x - x0, y - y0);
         let (x0, y0) = (x0 as isize, y0 as isize);

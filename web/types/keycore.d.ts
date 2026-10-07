@@ -95,5 +95,6 @@ export declare class KeyNetLoop {
     private readonly session;
     constructor(rectified: boolean);
     nextCrop(frame: Size): CropRequest;
-    step(presence: number, peaks: KeyNetPeaks, frame: Size, nowMs: number): KeyNetStep;
+    /** `rgba` and `pixels` are the frame the model ran on, at whatever size it was read. */
+    step(presence: number, peaks: KeyNetPeaks, rgba: Uint8ClampedArray, pixels: Size, frame: Size, nowMs: number): KeyNetStep;
 }
