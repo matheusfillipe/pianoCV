@@ -96,6 +96,11 @@ impl Engine {
         })
     }
 
+    /// The board as last fitted.
+    pub fn fit(&self) -> Option<&Fit> {
+        self.session.fit()
+    }
+
     /// Runs the model on one RGBA frame and moves the tracker on. Also gives how long the model
     /// alone took.
     pub fn process(
