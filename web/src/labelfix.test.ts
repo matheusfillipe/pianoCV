@@ -143,6 +143,7 @@ describe("labelfix", () => {
       whiteKeys: KEYS,
       phase: PHASE,
       lift: null,
+      blackDepth: keyboardTemplate(KEYS, PHASE).blackLow[0]?.y ?? 0,
     };
     const labels = prefill(
       fit,

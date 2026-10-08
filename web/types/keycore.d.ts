@@ -28,6 +28,9 @@ export type KeyNetFit = {
     /** How the black keys' tops sit over the keybed in this view, null until their top corners
      * have been seen. */
     readonly lift: readonly [number, number, number] | null;
+    /** How much of the keybed's depth this board's black keys take, measured while it is
+     * tracked. */
+    readonly blackDepth: number;
     /** The bend the board was fitted under: the homography, quad and lift live in the frame
      * with it taken out, and `bendPoint` carries a point of them into the picture. */
     readonly lens: Lens;
@@ -69,7 +72,9 @@ export type KeyNetStep = {
     readonly acquired: boolean;
 };
 export declare function loadKeycore(): Promise<unknown>;
-export declare function keyboardTemplate(whiteKeys: number, phase: string): KeyboardTemplate;
+/** The template for a board whose black keys take `blackDepth` of the keybed: a fit's own
+ * `blackDepth`, or a typical board's when none is given. */
+export declare function keyboardTemplate(whiteKeys: number, phase: string, blackDepth?: number): KeyboardTemplate;
 export declare function liftPoints(homography: Homography, lift: readonly [number, number, number], points: readonly Point[]): Point[];
 export declare function refineHomography(pairs: readonly {
     readonly src: Point;

@@ -85,6 +85,7 @@ pub fn fit_keyboard(
         lock(white_keys, phase)?,
         frame,
         None,
+        keys::BLACK_KEY_DEPTH,
     ))
 }
 
@@ -127,12 +128,18 @@ pub fn lift_points(homography: &[f64], lift: &[f64], points_json: &str) -> Resul
     print(&lifted)
 }
 
-/// The template for a board as JSON, in white-key units.
+/// The template for a board whose black keys take `black_depth` of the keybed, or a typical
+/// board's when none is given, as JSON in white-key units.
 #[wasm_bindgen]
-pub fn keyboard_template(white_keys: u32, phase: &str) -> Result<String, JsError> {
+pub fn keyboard_template(
+    white_keys: u32,
+    phase: &str,
+    black_depth: Option<f64>,
+) -> Result<String, JsError> {
     print(&keys::keyboard_template(
         white_keys as usize,
         parse::<Phase>(&format!("\"{phase}\""))?,
+        black_depth.unwrap_or(keys::BLACK_KEY_DEPTH),
     ))
 }
 

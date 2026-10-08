@@ -152,7 +152,7 @@ mod template {
 
     #[test]
     fn spans_the_board_and_marks_every_white_key_gap() {
-        let template = keyboard_template(7, Phase::C);
+        let template = keyboard_template(7, Phase::C, BLACK_KEY_DEPTH);
         assert_eq!(
             template.corners,
             [
@@ -169,7 +169,7 @@ mod template {
 
     #[test]
     fn places_one_black_key_between_every_white_pair_but_e_f_and_b_c() {
-        let template = keyboard_template(7, Phase::C);
+        let template = keyboard_template(7, Phase::C, BLACK_KEY_DEPTH);
         assert_eq!(template.black_low.len(), 5);
         assert_eq!(template.black_high.len(), 5);
         for (low, high) in template.black_low.iter().zip(&template.black_high) {
@@ -181,7 +181,7 @@ mod template {
 
     #[test]
     fn agrees_with_the_key_layout_for_a_black_keys_position() {
-        let template = keyboard_template(29, Phase::C);
+        let template = keyboard_template(29, Phase::C, BLACK_KEY_DEPTH);
         let base = f64::from(white_index(60));
         let expected = key_units(61);
         assert!((template.black_low[0].x - (expected.from - base)).abs() < 1e-9);
@@ -198,7 +198,10 @@ fn scored(p: Point, score: f64) -> ScoredPoint {
 }
 
 fn homography_for(white_keys: usize, phase: Phase, quad: &[Point; 4]) -> Homography {
-    find_homography(&keyboard_template(white_keys, phase).corners, quad)
+    find_homography(
+        &keyboard_template(white_keys, phase, BLACK_KEY_DEPTH).corners,
+        quad,
+    )
 }
 
 fn in_frame(p: Point) -> bool {
@@ -212,6 +215,7 @@ struct Synth {
     outlier_fraction: f64,
     seed: u32,
     lift: Option<Lift>,
+    black_depth: f64,
 }
 
 impl Default for Synth {
@@ -222,6 +226,7 @@ impl Default for Synth {
             outlier_fraction: 0.0,
             seed: 1,
             lift: None,
+            black_depth: BLACK_KEY_DEPTH,
         }
     }
 }
@@ -241,7 +246,7 @@ fn lift_many(h: &Homography, lift: &Lift, points: &[Point]) -> Vec<Point> {
 
 fn synth_peaks(white_keys: usize, phase: Phase, h: &Homography, options: Synth) -> Peaks {
     let mut rng = Mulberry32::new(options.seed);
-    let template = keyboard_template(white_keys, phase);
+    let template = keyboard_template(white_keys, phase, options.black_depth);
     let with_noise = |rng: &mut Mulberry32, p: Point| Point {
         x: p.x + gaussian_noise(rng, options.noise_px) / FRAME.width,
         y: p.y + gaussian_noise(rng, options.noise_px) / FRAME.height,
@@ -366,6 +371,7 @@ const NOISY: Synth = Synth {
     outlier_fraction: 0.2,
     seed: 1,
     lift: None,
+    black_depth: BLACK_KEY_DEPTH,
 };
 
 mod fitting {
@@ -379,7 +385,7 @@ mod fitting {
         for view in [frontal(), steep(), rotated()] {
             let h = homography_for(white_keys, phase, &view);
             let peaks = synth_peaks(white_keys, phase, &h, NOISY);
-            let fit = fit_keyboard(&peaks, None, FRAME, None).expect("a fit");
+            let fit = fit_keyboard(&peaks, None, FRAME, None, BLACK_KEY_DEPTH).expect("a fit");
             assert_eq!(fit.white_keys, white_keys);
             assert_eq!(fit.phase, phase);
             expect_close_quad(&fit.quad, &view, 4.0);
@@ -402,7 +408,13 @@ mod fitting {
             },
         );
         assert_eq!(peaks.corners.iter().filter(|c| c.is_none()).count(), 1);
-        let fit = fit_keyboard(&peaks, Some(Lock { white_keys, phase }), FRAME, None);
+        let fit = fit_keyboard(
+            &peaks,
+            Some(Lock { white_keys, phase }),
+            FRAME,
+            None,
+            BLACK_KEY_DEPTH,
+        );
         assert_eq!(fit.expect("a fit").white_keys, white_keys);
     }
 
@@ -413,7 +425,7 @@ mod fitting {
         let mut peaks = synth_peaks(white_keys, phase, &h, NOISY);
         peaks.corners[0] = None;
         peaks.corners[3] = None;
-        assert!(fit_keyboard(&peaks, None, FRAME, None).is_none());
+        assert!(fit_keyboard(&peaks, None, FRAME, None, BLACK_KEY_DEPTH).is_none());
     }
 
     #[test]
@@ -429,12 +441,12 @@ mod fitting {
                 ..Synth::default()
             },
         );
-        let corners = keyboard_template(white_keys, phase).corners;
+        let corners = keyboard_template(white_keys, phase, BLACK_KEY_DEPTH).corners;
         let one_key_in =
             |corner: Point| scored(apply_homography(&h, corner.x + 1.0, corner.y), 0.9);
         peaks.corners[0] = Some(one_key_in(corners[0]));
         peaks.corners[3] = Some(one_key_in(corners[3]));
-        let fit = fit_keyboard(&peaks, None, FRAME, None).expect("a fit");
+        let fit = fit_keyboard(&peaks, None, FRAME, None, BLACK_KEY_DEPTH).expect("a fit");
         assert_eq!(fit.white_keys, white_keys);
         assert_eq!(fit.phase, phase);
         let near = apply_homography(&h, 1.0, 1.0);
@@ -451,7 +463,7 @@ mod fitting {
         for (white_keys, phase) in BOARDS {
             let h = homography_for(white_keys, phase, &frontal());
             let peaks = synth_peaks(white_keys, phase, &h, NOISY);
-            let fit = fit_keyboard(&peaks, None, FRAME, None).expect("a fit");
+            let fit = fit_keyboard(&peaks, None, FRAME, None, BLACK_KEY_DEPTH).expect("a fit");
             assert_eq!((fit.white_keys, fit.phase), (white_keys, phase));
         }
     }
@@ -460,14 +472,14 @@ mod fitting {
     fn places_the_rear_from_back_gaps_when_the_front_rows_are_biased() {
         let (white_keys, phase) = BOARDS[1];
         let h = homography_for(white_keys, phase, &steep());
-        let template = keyboard_template(white_keys, phase);
+        let template = keyboard_template(white_keys, phase, BLACK_KEY_DEPTH);
         let mut peaks = synth_peaks(white_keys, phase, &h, Synth::default());
         let lock = Some(Lock { white_keys, phase });
         for black in peaks.black_low.iter_mut().chain(&mut peaks.black_high) {
             black.y += BLACK_ROW_BIAS_PX / FRAME.height;
         }
         let rear_error = |peaks: &Peaks| -> f64 {
-            let fit = fit_keyboard(peaks, lock, FRAME, None).expect("a fit");
+            let fit = fit_keyboard(peaks, lock, FRAME, None, BLACK_KEY_DEPTH).expect("a fit");
             (0..=white_keys)
                 .map(|x| {
                     let at = Point {
@@ -494,7 +506,13 @@ mod fitting {
         let (white_keys, phase) = BOARDS[0];
         let h = homography_for(white_keys, phase, &frontal());
         let peaks = synth_peaks(white_keys, phase, &h, NOISY);
-        let fit = fit_keyboard(&peaks, Some(Lock { white_keys, phase }), FRAME, None);
+        let fit = fit_keyboard(
+            &peaks,
+            Some(Lock { white_keys, phase }),
+            FRAME,
+            None,
+            BLACK_KEY_DEPTH,
+        );
         assert_eq!(fit.expect("a fit").white_keys, white_keys);
     }
 
@@ -506,7 +524,7 @@ mod fitting {
             corners,
             ..Peaks::default()
         };
-        assert!(fit_keyboard(&peaks, None, FRAME, None).is_none());
+        assert!(fit_keyboard(&peaks, None, FRAME, None, BLACK_KEY_DEPTH).is_none());
     }
 
     #[test]
@@ -516,7 +534,7 @@ mod fitting {
         let mut peaks = synth_peaks(white_keys, phase, &h, Synth::default());
         peaks.corners[2] = None;
         peaks.corners[3] = None;
-        assert!(fit_keyboard(&peaks, None, FRAME, None).is_none());
+        assert!(fit_keyboard(&peaks, None, FRAME, None, BLACK_KEY_DEPTH).is_none());
     }
 }
 
@@ -537,7 +555,10 @@ mod counting {
         let (white_keys, phase) = BOARDS[2];
         let h = homography_for(white_keys, phase, &steep());
         let truth_of = {
-            let inverse = find_homography(&steep(), &keyboard_template(white_keys, phase).corners);
+            let inverse = find_homography(
+                &steep(),
+                &keyboard_template(white_keys, phase, BLACK_KEY_DEPTH).corners,
+            );
             move |p: ScoredPoint| apply_homography(&inverse, p.x, p.y).x
         };
         let mut peaks = synth_peaks(white_keys, phase, &h, Synth::default());
@@ -566,7 +587,8 @@ mod counting {
             "/../web/src/fixtures/steep-board-peaks.json"
         )))
         .expect("the fixture parses");
-        let fit = fit_keyboard(&board.peaks, None, board.size, None).expect("a fit");
+        let fit =
+            fit_keyboard(&board.peaks, None, board.size, None, BLACK_KEY_DEPTH).expect("a fit");
         assert_eq!(fit.white_keys, board.white_keys);
         let front = ((fit.quad[2].x - fit.quad[3].x) * board.size.width)
             .hypot((fit.quad[2].y - fit.quad[3].y) * board.size.height);
@@ -596,11 +618,11 @@ mod lifting {
                 ..Synth::default()
             },
         );
-        let template = keyboard_template(white_keys, phase);
+        let template = keyboard_template(white_keys, phase, BLACK_KEY_DEPTH);
         with_back_points(&mut peaks, &template, &h, &truth);
         peaks.black_top_low.clear();
         peaks.black_top_high.clear();
-        let fit = fit_keyboard(&peaks, None, FRAME, None).expect("a fit");
+        let fit = fit_keyboard(&peaks, None, FRAME, None, BLACK_KEY_DEPTH).expect("a fit");
         let lift = estimate_lift(&peaks, &fit, FRAME).expect("a lift");
         for bottom in &template.black_low {
             let rear = Point {
@@ -628,9 +650,9 @@ mod lifting {
                 ..Synth::default()
             },
         );
-        let fit = fit_keyboard(&peaks, None, FRAME, None).expect("a fit");
+        let fit = fit_keyboard(&peaks, None, FRAME, None, BLACK_KEY_DEPTH).expect("a fit");
         let lift = estimate_lift(&peaks, &fit, FRAME).expect("a lift");
-        let template = keyboard_template(white_keys, phase);
+        let template = keyboard_template(white_keys, phase, BLACK_KEY_DEPTH);
         let drawn: Vec<_> = key_net_faces(&fit, &lift)
             .into_iter()
             .filter(|face| face.black)
@@ -650,7 +672,7 @@ mod lifting {
         let (white_keys, phase) = BOARDS[1];
         let h = homography_for(white_keys, phase, &steep());
         let peaks = synth_peaks(white_keys, phase, &h, Synth::default());
-        let fit = fit_keyboard(&peaks, None, FRAME, None).expect("a fit");
+        let fit = fit_keyboard(&peaks, None, FRAME, None, BLACK_KEY_DEPTH).expect("a fit");
         assert!(estimate_lift(&peaks, &fit, FRAME).is_none());
     }
 }
@@ -711,6 +733,7 @@ mod tracking {
         outlier_fraction: 0.1,
         seed: 1,
         lift: None,
+        black_depth: BLACK_KEY_DEPTH,
     };
 
     fn good(board: usize) -> ModelFrame {
@@ -1011,8 +1034,14 @@ mod lens_bend {
         let (seen, lock) = seen_through(&truth, steep());
         let mut lens = Lens { k: 0.0, ..truth };
         for _ in 0..4 {
-            let fit = fit_keyboard(&straighten_peaks(&seen, &lens), Some(lock), FRAME, None)
-                .expect("a fit under the lock");
+            let fit = fit_keyboard(
+                &straighten_peaks(&seen, &lens),
+                Some(lock),
+                FRAME,
+                None,
+                BLACK_KEY_DEPTH,
+            )
+            .expect("a fit under the lock");
             lens.k = estimate_bend(&seen, &fit, &lens).expect("a bend");
         }
         lens.k
@@ -1031,5 +1060,57 @@ mod lens_bend {
     fn finds_no_bend_through_a_straight_lens() {
         let k = bend_found(Lens::straight(FRAME));
         assert!(k.abs() < 0.02, "{k}");
+    }
+}
+
+mod black_depth {
+    use super::*;
+    use crate::depth::estimate_black_depth;
+
+    const DEPTH: f64 = 0.7;
+
+    /// How far the fitted keybed's back edge sits from the true one, at its worst, in pixels.
+    fn back_edge_off(fit: &Fit, truth: &Homography, white_keys: usize) -> f64 {
+        (0..=white_keys)
+            .map(|x| {
+                let found = apply_homography(&fit.homography, x as f64, 0.0);
+                let real = apply_homography(truth, x as f64, 0.0);
+                ((found.x - real.x) * FRAME.width).hypot((found.y - real.y) * FRAME.height)
+            })
+            .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn reads_a_boards_own_black_key_depth_and_keeps_the_back_edge_on_the_keys() {
+        let (white_keys, phase) = (36, Phase::C);
+        let truth = homography_for(white_keys, phase, &steep());
+        let options = Synth {
+            noise_px: 0.5,
+            black_depth: DEPTH,
+            ..Synth::default()
+        };
+        let mut peaks = synth_peaks(white_keys, phase, &truth, options);
+        peaks.back_gaps = keyboard_template(white_keys, phase, DEPTH)
+            .back_gaps
+            .iter()
+            .map(|p| scored(apply_homography(&truth, p.x, p.y), 0.9))
+            .collect();
+        let lock = Some(Lock { white_keys, phase });
+        let standard = fit_keyboard(&peaks, lock, FRAME, None, BLACK_KEY_DEPTH).expect("a fit");
+        let mut depth = BLACK_KEY_DEPTH;
+        for _ in 0..30 {
+            let fit = fit_keyboard(&peaks, lock, FRAME, None, depth).expect("a fit");
+            depth += 0.2 * (estimate_black_depth(&peaks, &fit).expect("a depth") - depth);
+        }
+        let measured = fit_keyboard(&peaks, lock, FRAME, None, depth).expect("a fit");
+        assert!((depth - DEPTH).abs() < 0.01, "{depth}");
+        let (before, after) = (
+            back_edge_off(&standard, &truth, white_keys),
+            back_edge_off(&measured, &truth, white_keys),
+        );
+        assert!(
+            before > 3.0 * after && after < 2.0,
+            "{before:.2} px before, {after:.2} px after"
+        );
     }
 }

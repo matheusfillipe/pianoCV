@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::decode::Peaks;
 use crate::fit::{fit_candidates, fit_keyboard, Fit, Lift, Lock};
 use crate::geom::{distance, find_homography, is_finite_homography, Point, Size};
-use crate::keys::keyboard_template;
+use crate::keys::{keyboard_template, BLACK_KEY_DEPTH};
 use crate::lift::{estimate_lift, lift_apart_keys, LIFT_JUMPS_TO_MOVE, LIFT_JUMP_KEYS};
 
 fn low_pass(value: f64, previous: f64, alpha: f64) -> f64 {
@@ -116,6 +116,8 @@ struct Tracking {
     contrary_candidate: Option<Lock>,
     since_contrary_check: u32,
     held_fit: Option<Fit>,
+    /// How much of the keybed this board's black keys take, as measured so far.
+    black_depth: f64,
 }
 
 enum State {
@@ -242,8 +244,10 @@ impl Smoother {
         for (i, corner) in quad.iter_mut().enumerate() {
             *corner = self.filters[i].filter(*corner, timestamp_ms);
         }
-        let homography =
-            find_homography(&keyboard_template(fit.white_keys, fit.phase).corners, &quad);
+        let homography = find_homography(
+            &keyboard_template(fit.white_keys, fit.phase, fit.black_depth).corners,
+            &quad,
+        );
         let held = Fit {
             quad,
             homography: if is_finite_homography(&homography) {
@@ -315,6 +319,14 @@ impl Tracker {
         self.smoother.reset();
     }
 
+    /// Moves the tracked board's black-key depth `share` of the way to `reading`. A board being
+    /// searched for is fitted at a typical board's depth, and each board found starts there.
+    pub fn follow_black_depth(&mut self, reading: f64, share: f64) {
+        if let State::Tracking(state) = &mut self.state {
+            state.black_depth += share * (reading - state.black_depth);
+        }
+    }
+
     pub fn update(&mut self, frame: &ModelFrame, size: Size, timestamp_ms: f64) -> Option<Fit> {
         match &mut self.state {
             State::Searching {
@@ -326,7 +338,7 @@ impl Tracker {
                     votes.clear();
                     return None;
                 }
-                let candidates = fit_candidates(&frame.peaks, None, size, None);
+                let candidates = fit_candidates(&frame.peaks, None, size, None, BLACK_KEY_DEPTH);
                 if candidates.is_empty() {
                     return None;
                 }
@@ -344,6 +356,7 @@ impl Tracker {
                     contrary_candidate: None,
                     since_contrary_check: 0,
                     held_fit: Some(held.clone()),
+                    black_depth: BLACK_KEY_DEPTH,
                 }));
                 Some(held)
             }
@@ -354,6 +367,7 @@ impl Tracker {
                         Some(state.lock),
                         size,
                         state.held_fit.as_ref(),
+                        state.black_depth,
                     );
                     match &locked {
                         Some(fit) => {
@@ -366,7 +380,7 @@ impl Tracker {
                     state.since_contrary_check += 1;
                     if state.since_contrary_check >= CONTRARY_EVERY {
                         state.since_contrary_check = 0;
-                        let alt = fit_keyboard(&frame.peaks, None, size, None);
+                        let alt = fit_keyboard(&frame.peaks, None, size, None, state.black_depth);
                         register_contrary(state, alt.as_ref(), locked.as_ref());
                     }
                 } else {

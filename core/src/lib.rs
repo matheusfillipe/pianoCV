@@ -1,6 +1,7 @@
 #![allow(clippy::needless_range_loop)]
 
 pub mod decode;
+pub mod depth;
 #[cfg(feature = "native")]
 pub mod engine;
 pub mod fit;

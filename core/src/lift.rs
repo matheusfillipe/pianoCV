@@ -6,7 +6,7 @@ use crate::geom::{
     apply_homography, distance, invert_homography, solve, Homography, Mulberry32, Point,
     ScoredPoint, Size,
 };
-use crate::keys::{board_keys, keyboard_template, BLACK_KEY_DEPTH};
+use crate::keys::{board_keys, keyboard_template};
 
 // how far along the board, in white keys, a top corner can sit from the bottom corner under it
 // once mapped back through the keybed's homography
@@ -65,7 +65,7 @@ fn solve_lift(h: &Homography, pairs: &[LiftPair]) -> Option<Lift> {
 /// corner each top corner belongs to, or None when too few top corners agree on one.
 pub fn estimate_lift(peaks: &Peaks, fit: &Fit, frame: Size) -> Option<Lift> {
     let inverse = invert_homography(&fit.homography)?;
-    let template = keyboard_template(fit.white_keys, fit.phase);
+    let template = keyboard_template(fit.white_keys, fit.phase, fit.black_depth);
     let at_back = |points: &[Point]| -> Vec<Point> {
         points.iter().map(|p| Point { x: p.x, y: 0.0 }).collect()
     };
@@ -163,7 +163,7 @@ pub fn estimate_lift(peaks: &Peaks, fit: &Fit, frame: Size) -> Option<Lift> {
 pub fn lift_keys(fit: &Fit, lift: &Lift, frame: Size) -> f64 {
     let middle = Point {
         x: fit.white_keys as f64 / 2.0,
-        y: BLACK_KEY_DEPTH,
+        y: fit.black_depth,
     };
     let bottom = apply_homography(&fit.homography, middle.x, middle.y);
     let top = lifted(&fit.homography, lift, middle);
@@ -175,7 +175,7 @@ pub fn lift_keys(fit: &Fit, lift: &Lift, frame: Size) -> f64 {
 pub fn lift_apart_keys(fit: &Fit, a: &Lift, b: &Lift, frame: Size) -> f64 {
     let middle = Point {
         x: fit.white_keys as f64 / 2.0,
-        y: BLACK_KEY_DEPTH,
+        y: fit.black_depth,
     };
     let p = lifted(&fit.homography, a, middle);
     let q = lifted(&fit.homography, b, middle);
@@ -196,7 +196,7 @@ pub struct Face {
 pub fn key_net_faces(fit: &Fit, lift: &Lift) -> Vec<Face> {
     let plane = |x: f64, y: f64| apply_homography(&fit.homography, x, y);
     let top = |x: f64, y: f64| lifted(&fit.homography, lift, Point { x, y });
-    board_keys(fit.white_keys, fit.phase)
+    board_keys(fit.white_keys, fit.phase, fit.black_depth)
         .into_iter()
         .flat_map(|key| {
             let (black, semitone, from, to, depth) =
@@ -302,7 +302,7 @@ pub struct KeyOutline {
 /// Every key of the fitted board once, low to high, flat on the keybed until the fit has a lift,
 /// where the camera sees it, with its lens's bend.
 pub fn key_outlines(fit: &Fit) -> Vec<KeyOutline> {
-    let layout = board_keys(fit.white_keys, fit.phase);
+    let layout = board_keys(fit.white_keys, fit.phase, fit.black_depth);
     let faces = key_net_faces(fit, &fit.lift.unwrap_or([0.0; 3]));
     let mut faces = faces.iter().peekable();
     let mut keys = Vec::new();

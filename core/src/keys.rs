@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::geom::Point;
 
-/// How much of the keybed's depth a black key takes, from the far edge where the black keys start.
+/// How much of the keybed's depth a black key takes, from the far edge where the black keys start,
+/// on a typical board. Boards differ, so this is only where a board starts until its own is
+/// measured.
 pub const BLACK_KEY_DEPTH: f64 = 0.62;
 
 const WHITE_PC_INDEX: [i32; 12] = [0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6];
@@ -110,7 +112,7 @@ pub struct KeyboardTemplate {
     pub black_high: Vec<Point>,
 }
 
-pub fn keyboard_template(white_keys: usize, phase: Phase) -> KeyboardTemplate {
+pub fn keyboard_template(white_keys: usize, phase: Phase, black_depth: f64) -> KeyboardTemplate {
     let first = first_white_pitch(phase);
     let base = f64::from(white_index(first));
     let width = white_keys as f64;
@@ -143,11 +145,11 @@ pub fn keyboard_template(white_keys: usize, phase: Phase) -> KeyboardTemplate {
             let units = key_units(pitch + 1);
             black_low.push(Point {
                 x: units.from - base,
-                y: BLACK_KEY_DEPTH,
+                y: black_depth,
             });
             black_high.push(Point {
                 x: units.to - base,
-                y: BLACK_KEY_DEPTH,
+                y: black_depth,
             });
         }
         pitch += 1;
@@ -169,7 +171,7 @@ pub struct BoardKey {
     pub depth: f64,
 }
 
-pub fn board_keys(white_keys: usize, phase: Phase) -> Vec<BoardKey> {
+pub fn board_keys(white_keys: usize, phase: Phase, black_depth: f64) -> Vec<BoardKey> {
     let first = first_white_pitch(phase);
     let base = f64::from(white_index(first));
     let mut keys = Vec::new();
@@ -192,7 +194,7 @@ pub fn board_keys(white_keys: usize, phase: Phase) -> Vec<BoardKey> {
                 semitone: pitch + 1 - first,
                 from: units.from - base,
                 to: units.to - base,
-                depth: BLACK_KEY_DEPTH,
+                depth: black_depth,
             });
         }
         pitch += 1;

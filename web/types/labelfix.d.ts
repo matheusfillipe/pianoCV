@@ -9,8 +9,11 @@ export type FixedLabels = Record<PointKind, LabelPoint[]> & {
     height: number;
     whiteKeys: number;
     phase: string;
+    /** How much of the keybed the board's black keys take, as the fit measured it. Labels saved
+     * before boards were measured have none and take a typical board's. */
+    blackDepth?: number;
 };
-type Locator = Pick<KeyNetFit, "homography" | "whiteKeys" | "phase" | "lift">;
+type Locator = Pick<KeyNetFit, "homography" | "whiteKeys" | "phase" | "lift" | "blackDepth">;
 type FrontTops = Pick<KeyNetPeaks, "blackTopLow" | "blackTopHigh">;
 type BackPeaks = Pick<KeyNetPeaks, "blackBackLow" | "blackBackHigh">;
 type RearKind = "backGaps" | "blackBackLow" | "blackBackHigh";

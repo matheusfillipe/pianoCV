@@ -86,7 +86,7 @@ fn matches(peaks: &Peaks, fit: &Fit, lens: &Lens) -> Vec<(Point, Point)> {
     let Some(inverse) = invert_homography(&fit.homography) else {
         return Vec::new();
     };
-    let template = keyboard_template(fit.white_keys, fit.phase);
+    let template = keyboard_template(fit.white_keys, fit.phase, fit.black_depth);
     let rows: [(&[ScoredPoint], &[Point]); 4] = [
         (&peaks.gaps, &template.gaps),
         (&peaks.back_gaps, &template.back_gaps),

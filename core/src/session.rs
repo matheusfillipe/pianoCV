@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::decode::{Peaks, SEARCH_SIZE, TRACK_HEIGHT, TRACK_WIDTH};
+use crate::depth::estimate_black_depth;
 use crate::fit::{to_pixels, Fit};
 use crate::geom::{apply_homography, find_homography, invert_homography, Homography, Point, Size};
 use crate::keys::BLACK_KEY_DEPTH;
@@ -354,14 +355,15 @@ pub struct Session {
     seed_tries: u32,
     rectified: bool,
     lens: Option<Lens>,
-    since_bend: u32,
+    since_refine: u32,
 }
 
-/// How many tracked frames pass between two looks at the lens's bend, and how far each look
-/// moves the bend we hold. The camera does not move while someone plays, so a slow average
-/// of many frames settles on its lens and shrugs off a frame that read the keys badly.
-const BEND_EVERY: u32 = 10;
-const BEND_FOLLOW: f64 = 0.2;
+/// How many tracked frames pass between two readings of what a board and its camera hold still,
+/// the lens's bend and the black keys' depth, and how far each reading moves what we hold. The
+/// camera does not move while someone plays, so a slow average of many frames settles and shrugs
+/// off a frame that read the keys badly.
+const REFINE_EVERY: u32 = 10;
+const REFINE_FOLLOW: f64 = 0.2;
 
 impl Session {
     pub fn new(rectified: bool) -> Self {
@@ -372,7 +374,7 @@ impl Session {
             seed_tries: 0,
             rectified,
             lens: None,
-            since_bend: 0,
+            since_refine: 0,
         }
     }
 
@@ -447,13 +449,19 @@ impl Session {
             presence: result.presence,
             peaks: straighten_peaks(&result.peaks, &lens),
         };
+        if !was_tracking {
+            self.since_refine = 0;
+        }
         self.fit = self.tracker.update(&straight, size, now_ms).map(|fit| {
-            self.since_bend += 1;
-            if self.since_bend >= BEND_EVERY {
-                self.since_bend = 0;
+            self.since_refine += 1;
+            if self.since_refine >= REFINE_EVERY {
+                self.since_refine = 0;
                 if let Some(k) = estimate_bend(&result.peaks, &fit, &lens) {
-                    lens.k += BEND_FOLLOW * (k - lens.k);
+                    lens.k += REFINE_FOLLOW * (k - lens.k);
                     self.lens = Some(lens);
+                }
+                if let Some(depth) = estimate_black_depth(&straight.peaks, &fit) {
+                    self.tracker.follow_black_depth(depth, REFINE_FOLLOW);
                 }
             }
             Fit { lens, ..fit }

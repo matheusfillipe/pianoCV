@@ -36,10 +36,18 @@ pub struct Fit {
     pub gap_spacing: Option<f64>,
     pub reprojection_error: f64,
     pub lift: Option<Lift>,
+    /// How much of the keybed's depth this board's black keys take, which the template was
+    /// fitted with.
+    #[serde(default = "standard_black_depth")]
+    pub black_depth: f64,
     /// The bend the board was fitted under: the homography, quad and lift all live in the
     /// frame with it taken out, and `lens.bend` carries a point of them into the picture.
     #[serde(default)]
     pub lens: Lens,
+}
+
+fn standard_black_depth() -> f64 {
+    BLACK_KEY_DEPTH
 }
 
 impl Fit {
@@ -478,37 +486,63 @@ fn build_pool(
     let Some(template_x_of) = template_x_of else {
         return pool;
     };
-    for (gaps, row) in [(&peaks.gaps, 1.0), (&peaks.back_gaps, 0.0)] {
-        for gap in gaps {
+    pool.extend(snap_gaps(&peaks.gaps, &template_x_of, white_keys, 1.0));
+    pool.extend(snap_gaps(&peaks.back_gaps, &template_x_of, white_keys, 0.0));
+    pool.extend(snap_blacks(
+        &peaks.black_low,
+        &template.black_low,
+        &template_x_of,
+    ));
+    pool.extend(snap_blacks(
+        &peaks.black_high,
+        &template.black_high,
+        &template_x_of,
+    ));
+    pool
+}
+
+/// Each detected gap of one edge, `row` deep, taken for the board's gap `template_x_of` puts it
+/// nearest, when it sits close enough to one.
+pub(crate) fn snap_gaps(
+    gaps: &[ScoredPoint],
+    template_x_of: &dyn Fn(Point) -> f64,
+    white_keys: usize,
+    row: f64,
+) -> Vec<Correspondence> {
+    gaps.iter()
+        .filter_map(|gap| {
             let estimate = template_x_of(gap.point());
             let index = js_round(estimate);
-            if index >= 1.0
+            (index >= 1.0
                 && index <= white_keys.saturating_sub(1) as f64
-                && (estimate - index).abs() < GAP_SNAP_KEYS
-            {
-                pool.push(Correspondence {
+                && (estimate - index).abs() < GAP_SNAP_KEYS)
+                .then_some(Correspondence {
                     src: Point { x: index, y: row },
                     dst: gap.point(),
-                });
-            }
-        }
-    }
-    let mut snap_black = |points: &[ScoredPoint], template_points: &[Point]| {
-        for point in points {
+                })
+        })
+        .collect()
+}
+
+/// Each detected black-key corner taken for the template corner `template_x_of` puts it nearest,
+/// when it sits close enough to one.
+pub(crate) fn snap_blacks(
+    points: &[ScoredPoint],
+    template_points: &[Point],
+    template_x_of: &dyn Fn(Point) -> f64,
+) -> Vec<Correspondence> {
+    points
+        .iter()
+        .filter_map(|point| {
             let estimate = template_x_of(point.point());
-            if let Some(nearest) = nearest_by_x(template_points, estimate) {
-                if (nearest.x - estimate).abs() < BLACK_SNAP_KEYS {
-                    pool.push(Correspondence {
-                        src: nearest,
-                        dst: point.point(),
-                    });
-                }
-            }
-        }
-    };
-    snap_black(&peaks.black_low, &template.black_low);
-    snap_black(&peaks.black_high, &template.black_high);
-    pool
+            nearest_by_x(template_points, estimate)
+                .filter(|nearest| (nearest.x - estimate).abs() < BLACK_SNAP_KEYS)
+                .map(|nearest| Correspondence {
+                    src: nearest,
+                    dst: point.point(),
+                })
+        })
+        .collect()
 }
 
 fn key_width(quad: &[Point; 4], white_keys: usize) -> f64 {
@@ -608,8 +642,9 @@ fn fit_hypothesis(
     phase: Phase,
     frame: Size,
     indexer: &Indexer,
+    black_depth: f64,
 ) -> Option<Fit> {
-    let template = keyboard_template(white_keys, phase);
+    let template = keyboard_template(white_keys, phase, black_depth);
     let pool = build_pool(peaks, &template, white_keys, indexer);
     if pool.len() < 4 {
         return None;
@@ -680,10 +715,11 @@ fn fit_hypothesis(
         explained: final_inliers.len() as f64 / detected.max(1) as f64,
         both_ends: end_seen(peaks, &refined, &template, [0, 3])
             && end_seen(peaks, &refined, &template, [1, 2]),
-        beyond_ends: count_beyond_ends(peaks, &refined, white_keys),
+        beyond_ends: count_beyond_ends(peaks, &refined, white_keys, black_depth),
         gap_spacing: gap_spacing(peaks, &refined),
         reprojection_error: median_error,
         lift: None,
+        black_depth,
         lens: Lens::default(),
     })
 }
@@ -744,7 +780,12 @@ const BEYOND_ENDS_ROW: f64 = 0.15;
 // a hand or a reflection past an end can raise a peak or two
 const BEYOND_ENDS_ALLOWED: usize = 2;
 
-pub fn count_beyond_ends(peaks: &Peaks, h: &Homography, white_keys: usize) -> usize {
+pub fn count_beyond_ends(
+    peaks: &Peaks,
+    h: &Homography,
+    white_keys: usize,
+    black_depth: f64,
+) -> usize {
     let Some(inverse) = invert_homography(h) else {
         return 0;
     };
@@ -764,18 +805,19 @@ pub fn count_beyond_ends(peaks: &Peaks, h: &Homography, white_keys: usize) -> us
         .chain(&peaks.black_high)
         .copied()
         .collect();
-    beyond(&peaks.gaps, 1.0) + beyond(&blacks, BLACK_KEY_DEPTH)
+    beyond(&peaks.gaps, 1.0) + beyond(&blacks, black_depth)
 }
 
-/// Fits the keyboard template to the detected peaks and keeps the best-explaining board. With no
-/// `lock` every standard board size and phase is tried.
+/// Fits the keyboard template, its black keys `black_depth` deep, to the detected peaks and keeps
+/// the best-explaining board. With no `lock` every standard board size and phase is tried.
 pub fn fit_keyboard(
     peaks: &Peaks,
     lock: Option<Lock>,
     frame: Size,
     prior: Option<&Fit>,
+    black_depth: f64,
 ) -> Option<Fit> {
-    fit_candidates(peaks, lock, frame, prior)
+    fit_candidates(peaks, lock, frame, prior, black_depth)
         .into_iter()
         .fold(None, |best: Option<Fit>, fit| match best {
             Some(b) if fit.explained <= b.explained => Some(b),
@@ -792,6 +834,7 @@ pub fn fit_candidates(
     lock: Option<Lock>,
     frame: Size,
     prior: Option<&Fit>,
+    black_depth: f64,
 ) -> Vec<Fit> {
     let candidates: Vec<Lock> = match lock {
         Some(lock) => vec![lock],
@@ -821,9 +864,14 @@ pub fn fit_candidates(
     let mut accepted = Vec::new();
     for candidate in &candidates {
         for indexer in &indexers {
-            let Some(fit) =
-                fit_hypothesis(peaks, candidate.white_keys, candidate.phase, frame, indexer)
-            else {
+            let Some(fit) = fit_hypothesis(
+                peaks,
+                candidate.white_keys,
+                candidate.phase,
+                frame,
+                indexer,
+                black_depth,
+            ) else {
                 continue;
             };
             // a board found for the first time must show both its ends, leave no keys past them

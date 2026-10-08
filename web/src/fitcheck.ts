@@ -87,7 +87,7 @@ export function checkFit(
   const keyPx =
     Math.hypot(frontHigh[0] - frontLow[0], frontHigh[1] - frontLow[1]) /
     labels.whiteKeys;
-  const template = keyboardTemplate(fit.whiteKeys, fit.phase);
+  const template = keyboardTemplate(fit.whiteKeys, fit.phase, fit.blackDepth);
   const gaps = template.gaps.map(toPx);
   const rightBoard = fit.whiteKeys === labels.whiteKeys;
   const shift = rightBoard

@@ -29,9 +29,15 @@ export type FixedLabels = Record<PointKind, LabelPoint[]> & {
   height: number;
   whiteKeys: number;
   phase: string;
+  /** How much of the keybed the board's black keys take, as the fit measured it. Labels saved
+   * before boards were measured have none and take a typical board's. */
+  blackDepth?: number;
 };
 
-type Locator = Pick<KeyNetFit, "homography" | "whiteKeys" | "phase" | "lift">;
+type Locator = Pick<
+  KeyNetFit,
+  "homography" | "whiteKeys" | "phase" | "lift" | "blackDepth"
+>;
 type FrontTops = Pick<KeyNetPeaks, "blackTopLow" | "blackTopHigh">;
 type BackPeaks = Pick<KeyNetPeaks, "blackBackLow" | "blackBackHigh">;
 type RearKind = "backGaps" | "blackBackLow" | "blackBackHigh";
@@ -122,7 +128,7 @@ export function prefillRear(
   peaks: BackPeaks,
   size: Size,
 ): RearLabels {
-  const template = keyboardTemplate(fit.whiteKeys, fit.phase);
+  const template = keyboardTemplate(fit.whiteKeys, fit.phase, fit.blackDepth);
   const keyPx = keyWidthPx(fit, size);
   const backTops = (
     bottoms: readonly Point[],
@@ -160,7 +166,7 @@ export function prefill(
   tops: FrontTops & BackPeaks,
   size: Size,
 ): FixedLabels {
-  const template = keyboardTemplate(fit.whiteKeys, fit.phase);
+  const template = keyboardTemplate(fit.whiteKeys, fit.phase, fit.blackDepth);
   const keyPx = keyWidthPx(fit, size);
   const blackLow = template.blackLow.map((p) => toPixels(fit, size, p));
   const blackHigh = template.blackHigh.map((p) => toPixels(fit, size, p));
@@ -170,6 +176,7 @@ export function prefill(
     width: size.width,
     height: size.height,
     whiteKeys: fit.whiteKeys,
+    blackDepth: fit.blackDepth,
     phase: fit.phase,
     corners: template.corners.map((p) => toPixels(fit, size, p)),
     gaps: template.gaps.map((p) => toPixels(fit, size, p)),
@@ -209,7 +216,11 @@ export function reproject(
   keys: number,
   fillHidden = false,
 ): FixedLabels {
-  const template = keyboardTemplate(labels.whiteKeys, labels.phase);
+  const template = keyboardTemplate(
+    labels.whiteKeys,
+    labels.phase,
+    labels.blackDepth,
+  );
   const targets: Record<
     "gaps" | "backGaps" | "blackLow" | "blackHigh",
     readonly Point[]
