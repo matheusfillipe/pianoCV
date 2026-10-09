@@ -98,9 +98,10 @@ fn report(name: &str, mut ahead: Vec<f64>) {
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
     let Some(labels) = args.get(1).map(PathBuf::from) else {
-        return Err("usage: backedge <labels-dir> [images-dir]".into());
+        return Err("usage: backedge <labels-dir> [images-dir] [model]".into());
     };
     let images = args.get(2).map_or_else(|| labels.clone(), PathBuf::from);
+    let model = args.get(3).map_or(MODEL, String::as_str);
     let mut runs: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
     for entry in fs::read_dir(&labels)? {
         let path = entry?.path();
@@ -116,7 +117,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut by_case: BTreeMap<String, Vec<f64>> = BTreeMap::new();
     for paths in runs.values_mut() {
         paths.sort();
-        let mut engine = Engine::new(MODEL)?;
+        let mut engine = Engine::new(model)?;
         for path in paths.iter() {
             let label: Value = serde_json::from_str(&fs::read_to_string(path)?)?;
             if label["piano"] == false {

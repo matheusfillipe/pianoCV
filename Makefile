@@ -77,7 +77,7 @@ core-test: ## run the keycore crate tests (cargo test)
 core-native-test: ## run the keycore crate tests with the native engine (cargo test --features native, needs web/public/keynet.onnx from make model)
 	cd core && cargo test --features native
 
-core-backedge: ## score how far the fitted back edge lands from labelled key backs, per case colour (ARGS="<labels-dir> [images-dir]")
+core-backedge: ## score how far the fitted back edge lands from labelled key backs, per case colour (ARGS="<labels-dir> [images-dir] [model]")
 	cd core && cargo run --release --features native --example backedge -- $(ARGS)
 
 core-demo: ## draw the keys on a video with the native engine (ARGS="<video> <out-dir>")
