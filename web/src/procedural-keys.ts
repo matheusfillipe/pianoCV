@@ -104,34 +104,34 @@ function meshBox(
   };
 }
 
-// corner 0 to 1 runs along the back edge, 1 to 2 crosses the depth, matching keybed3d's own
-// cornersFor convention
+// corner 0 to 1 runs along the back edge from the low side, 1 to 2 crosses the depth, matching
+// keybed3d's own cornersFor convention
 function topCornersOf(
   minX: number,
   maxX: number,
   topY: number,
-  minZ: number,
-  maxZ: number,
+  lowZ: number,
+  highZ: number,
 ): Vector3[] {
   return [
-    new Vector3(minX, topY, minZ),
-    new Vector3(minX, topY, maxZ),
-    new Vector3(maxX, topY, maxZ),
-    new Vector3(maxX, topY, minZ),
+    new Vector3(minX, topY, lowZ),
+    new Vector3(minX, topY, highZ),
+    new Vector3(maxX, topY, highZ),
+    new Vector3(maxX, topY, lowZ),
   ];
 }
 
 function frontCornersOf(
   frontX: number,
   topY: number,
-  minZ: number,
-  maxZ: number,
+  lowZ: number,
+  highZ: number,
 ): Vector3[] {
   return [
-    new Vector3(frontX, topY, minZ),
-    new Vector3(frontX, topY, maxZ),
-    new Vector3(frontX, KEY_TOP_Y, maxZ),
-    new Vector3(frontX, KEY_TOP_Y, minZ),
+    new Vector3(frontX, topY, lowZ),
+    new Vector3(frontX, topY, highZ),
+    new Vector3(frontX, KEY_TOP_Y, highZ),
+    new Vector3(frontX, KEY_TOP_Y, lowZ),
   ];
 }
 
@@ -152,6 +152,9 @@ export function buildKeyboard(
   const highestPitch = board.lowestPitch + board.keys - 1;
   const whiteKeys = whiteIndex(highestPitch) - originIndex + 1;
   const centerFrac = whiteKeys / 2;
+  // the camera faces the keys from +x, which puts -z on the player's right, so pitch rises
+  // toward -z for the low keys to land on the left as on a real keyboard
+  const zOf = (frac: number): number => (centerFrac - frac) * whiteUnit;
 
   const keys: KeyGeometry[] = [];
   for (let pitch = board.lowestPitch; pitch <= highestPitch; pitch += 1) {
@@ -171,8 +174,8 @@ export function buildKeyboard(
       leftFrac = index + gapFrac / 2;
       rightFrac = index + 1 - gapFrac / 2;
     }
-    const minZ = (leftFrac - centerFrac) * whiteUnit;
-    const maxZ = (rightFrac - centerFrac) * whiteUnit;
+    const minZ = zOf(rightFrac);
+    const maxZ = zOf(leftFrac);
     const minX = BACK_X;
     const maxX = black ? blackFrontX : FRONT_X;
     const topY = black ? KEY_TOP_Y + blackHeightUnits : KEY_TOP_Y;
@@ -191,8 +194,8 @@ export function buildKeyboard(
         minZ + bevelUnits,
         maxZ - bevelUnits,
       ),
-      topCorners: topCornersOf(minX, maxX, topY, minZ, maxZ),
-      frontCorners: black ? frontCornersOf(maxX, topY, minZ, maxZ) : null,
+      topCorners: topCornersOf(minX, maxX, topY, maxZ, minZ),
+      frontCorners: black ? frontCornersOf(maxX, topY, maxZ, minZ) : null,
     });
   }
 

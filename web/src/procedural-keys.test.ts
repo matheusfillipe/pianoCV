@@ -1,5 +1,12 @@
+import { PerspectiveCamera } from "three";
 import { describe, expect, it } from "vitest";
-import { mmToUnits, WHITE_KEY_WIDTH_MM } from "./keybed3d";
+import {
+  centreFor,
+  cornersFor,
+  mmToUnits,
+  projectCorners,
+  WHITE_KEY_WIDTH_MM,
+} from "./keybed3d";
 import { buildKeyboard, sampleKeyVariation } from "./procedural-keys";
 
 const STANDARD_BOARDS = [
@@ -29,6 +36,25 @@ describe("buildKeyboard", () => {
     }
   });
 
+  it("shows the low keys on the left to a camera at the player's side", () => {
+    const keyboard = buildKeyboard(STANDARD_BOARDS[3], midpoint);
+    const centre = centreFor(keyboard.minZ, keyboard.maxZ);
+    const camera = new PerspectiveCamera(45, 16 / 9, 0.1, 500);
+    camera.position.set(centre.x + 20, centre.y + 25, centre.z);
+    camera.lookAt(centre);
+    camera.updateMatrixWorld();
+    const [lowest, highest] = [keyboard.keys[0], keyboard.keys.at(-1)];
+    const [low] = projectCorners(camera, lowest?.topCorners);
+    const [high] = projectCorners(camera, highest?.topCorners);
+    expect(low.x).toBeLessThan(high.x);
+    const [backLow, , , frontLow] = projectCorners(
+      camera,
+      cornersFor(keyboard.minZ, keyboard.maxZ),
+    );
+    expect(backLow.x).toBeCloseTo(low.x, 1);
+    expect(frontLow.y).toBeGreaterThan(backLow.y);
+  });
+
   it("keeps pitches contiguous", () => {
     const board = STANDARD_BOARDS[2];
     const keyboard = buildKeyboard(board, midpoint);
@@ -56,7 +82,7 @@ describe("buildKeyboard", () => {
       expect(key.body.size[2]).toBeCloseTo(whites[0].body.size[2]);
     }
     for (let i = 1; i < whites.length; i += 1) {
-      const spacing = whites[i].body.center[2] - whites[i - 1].body.center[2];
+      const spacing = whites[i - 1].body.center[2] - whites[i].body.center[2];
       expect(spacing).toBeCloseTo(whiteUnit);
     }
   });
@@ -76,9 +102,9 @@ describe("buildKeyboard", () => {
         if (!preceding) {
           continue;
         }
-        const blackLeft = key.body.center[2] - key.body.size[2] / 2;
-        const precedingSlotLeft = preceding.body.center[2] - whiteUnit / 2;
-        const offset = (blackLeft - precedingSlotLeft) / whiteUnit;
+        const blackLow = key.body.center[2] + key.body.size[2] / 2;
+        const precedingSlotLow = preceding.body.center[2] + whiteUnit / 2;
+        const offset = (precedingSlotLow - blackLow) / whiteUnit;
         const pc = ((key.pitch % 12) + 12) % 12;
         const template = BLACK_TEMPLATE_OFFSETS[pc];
         expect(offset).toBeGreaterThanOrEqual(template - 0.031);

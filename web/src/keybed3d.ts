@@ -44,13 +44,13 @@ export function keybedCrop(whiteKeys: number, startFactor: number): KeybedCrop {
   return { minZ, maxZ: minZ + whiteKeys * keyWidth };
 }
 
-// corner 0 to 1 runs along the back edge, 1 to 2 crosses the depth, matching the label convention
+// back-low, back-high, front-high, front-low, the label convention; the low keys sit at maxZ
 export function cornersFor(minZ: number, maxZ: number): Vector3[] {
   return [
-    new Vector3(BACK_X, KEY_TOP_Y, minZ),
     new Vector3(BACK_X, KEY_TOP_Y, maxZ),
-    new Vector3(FRONT_X, KEY_TOP_Y, maxZ),
+    new Vector3(BACK_X, KEY_TOP_Y, minZ),
     new Vector3(FRONT_X, KEY_TOP_Y, minZ),
+    new Vector3(FRONT_X, KEY_TOP_Y, maxZ),
   ];
 }
 
