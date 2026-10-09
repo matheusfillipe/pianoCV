@@ -3,6 +3,12 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "vite";
+import {
+  motionDirOf,
+  motionDirs,
+  stillDirOf,
+  stillDirs,
+} from "./src/synth-dirs.ts";
 
 const webRoot = new URL(".", import.meta.url).pathname;
 const root = new URL("..", import.meta.url).pathname;
@@ -11,8 +17,14 @@ const targetFrames = Math.max(
   Number(process.env.PIANOCV_GEN_FRAMES) || 8000,
 );
 const motion = process.env.PIANOCV_GEN_MOTION === "1";
-const outDirName =
-  process.env.PIANOCV_GEN_OUT || (motion ? "synth-motion" : "synth-case");
+const outDirName = (motion ? motionDirOf : stillDirOf)(
+  process.env.PIANOCV_GEN_OUT || (motion ? "synth-motion" : "synth-case"),
+);
+if (!outDirName) {
+  throw new Error(
+    `PIANOCV_GEN_OUT must be one of ${(motion ? motionDirs : stillDirs).join(", ")}`,
+  );
+}
 
 const POLL_MS = 1_000;
 const STALL_MS = 60_000;

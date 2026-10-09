@@ -64,18 +64,19 @@ import {
   type SweepPose,
   samplePose,
 } from "./sweep";
+import {
+  type MotionDir,
+  motionDirOf,
+  type StillDir,
+  stillDirOf,
+} from "./synth-dirs";
 
 const WIDTH = 640;
 const HEIGHT = 480;
 const PAGE_PARAMS = new URLSearchParams(location.search);
-// ?out=synth-case opts into the case-dressed corpus, ?out=synth-keys into the per-key labelled
-// one; every other value keeps the default
-const SYNTH_DIR: "synth" | "synth-case" | "synth-keys" =
-  PAGE_PARAMS.get("out") === "synth-keys"
-    ? "synth-keys"
-    : PAGE_PARAMS.get("out") === "synth-case"
-      ? "synth-case"
-      : "synth";
+// ?out= picks which corpus the stills or the motion sequences go to, from ./synth-dirs
+const OUT_PARAM = PAGE_PARAMS.get("out") ?? "";
+const SYNTH_DIR: StillDir = stillDirOf(OUT_PARAM) ?? "synth";
 // ?elevation=min,max and ?azimuth=min,max narrow the sweep, the azimuth as a magnitude either
 // side of head on, so a batch can cover the views the rest of the corpus has too few of
 function rangeParam(name: string): { min: number; max: number } | null {
@@ -89,9 +90,7 @@ const AUTOSTART_FRAMES = Number(PAGE_PARAMS.get("frames"));
 // ?motion=1 switches gen.html to rendering short camera-path sequences with motion blur into
 // data/synth-motion, instead of single random-sweep stills
 const MOTION_MODE = PAGE_PARAMS.get("motion") === "1";
-// ?out=synth-test renders the sequences into a held-out set that training never reads
-const MOTION_DIR: "synth-motion" | "synth-test" =
-  PAGE_PARAMS.get("out") === "synth-test" ? "synth-test" : "synth-motion";
+const MOTION_DIR: MotionDir = motionDirOf(OUT_PARAM) ?? "synth-motion";
 const CAPTURE_INTERVAL_MS = 300;
 // enough of the keybed to be worth a label; below this there is nothing to learn from
 const MIN_VISIBLE_FRACTION = 0.2;
