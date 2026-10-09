@@ -182,6 +182,9 @@ class Recipe:
     camera_sim: bool = False
     # whether only the output layers learn, so new points or labels leave what the model sees alone
     heads_only: bool = False
+    # whether the encoder stays as it is while the decoder and heads learn: the heads alone can
+    # only rescore a place, so moving where a point is found takes the decoder too
+    frozen_encoder: bool = False
 
 
 BASE_RECIPE = Recipe()
@@ -558,6 +561,8 @@ def train_keynet(
         if init_onnx is not None or init_pt is not None
         else []
     )
+    if recipe.frozen_encoder:
+        model.features.requires_grad_(False)
     if recipe.heads_only:
         for part in (model.features, model.ups):
             part.requires_grad_(False)
@@ -668,6 +673,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--heads-only", action="store_true", help="train only the output layers, encoder frozen"
     )
     parser.add_argument(
+        "--frozen-encoder",
+        action="store_true",
+        help="keep the encoder as it is while the decoder and heads learn",
+    )
+    parser.add_argument(
         "--rectified",
         action="store_true",
         help="crop tracking samples with the rectifying homography",
@@ -739,6 +749,7 @@ def main() -> None:
                 rectified=args.rectified,
                 camera_sim=args.camera_sim,
                 heads_only=args.heads_only,
+                frozen_encoder=args.frozen_encoder,
             ),
             epochs=args.epochs,
             batch=args.batch,

@@ -120,6 +120,32 @@ def test_heads_only_training_leaves_the_encoder_and_decoder_untouched(tmp_path: 
         assert moved == name.startswith(("heat.", "presence.")), name
 
 
+def test_a_frozen_encoder_keeps_its_weights_while_the_decoder_learns(tmp_path: Path) -> None:
+    _write_frames(tmp_path / "stills", 3)
+    torch.manual_seed(0)
+    before = KeyNet(pretrained=False).state_dict()
+    model, _ = train_keynet(
+        tmp_path / "stills",
+        epochs=1,
+        batch=2,
+        steps_per_epoch=3,
+        workers=0,
+        pretrained=False,
+        recipe=Recipe(frozen_encoder=True),
+    )
+    after = model.state_dict()
+    weights = [name for name in before if name.endswith(".weight")]
+    for name in weights:
+        moved = not torch.equal(before[name], after[name].cpu())
+        if name.startswith("features."):
+            assert not moved, name
+    assert any(
+        not torch.equal(before[name], after[name].cpu())
+        for name in weights
+        if name.startswith("ups.")
+    )
+
+
 def test_a_rectified_sample_peaks_at_the_projected_corners(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
