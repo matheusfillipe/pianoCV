@@ -9,7 +9,7 @@ PORT ?= 5274
         tools-test tools-coverage tools-dead-code tools-unused-deps tools-security tools-audit tools-upgrade \
         build web-typecheck web-types web-lint web-fix web-test web-build dev dev-alt model site publish-models clean \
         lab-keymatch-push lab-keynet-push lab-keynet-train lab-keynet-eval lab-keynet-fp16 lab-mlflow-log \
-        core-lint core-test core-native-test core-backedge core-demo core-wasm core-fix
+        core-lint core-test core-native-test core-backedge core-acquire core-demo core-wasm core-fix
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -79,6 +79,9 @@ core-native-test: ## run the keycore crate tests with the native engine (cargo t
 
 core-backedge: ## score how far the fitted back edge lands from labelled key backs, per case colour (ARGS="<labels-dir> [images-dir] [model]")
 	cd core && cargo run --release --features native --example backedge -- $(ARGS)
+
+core-acquire: ## find the board afresh every N frames of each video and count fits read end for end (ARGS="<model> <restart every n frames> <video>...")
+	cd core && cargo run --release --features native --example acquire -- $(ARGS)
 
 core-demo: ## draw the keys on a video with the native engine (ARGS="<video> <out-dir>")
 	cd core && cargo run --release --features native --example desktop -- $(ARGS)

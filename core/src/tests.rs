@@ -726,6 +726,23 @@ mod one_euro {
 
 mod tracking {
     use super::*;
+    use crate::geom::is_mirrored_quad;
+
+    #[test]
+    fn a_turned_board_is_never_mirrored_and_a_flipped_one_is() {
+        let quad = frontal();
+        let turned = quad.map(|p| Point {
+            x: 1.0 - p.x,
+            y: 1.0 - p.y,
+        });
+        let flipped = quad.map(|p| Point {
+            x: 1.0 - p.x,
+            y: p.y,
+        });
+        assert!(!is_mirrored_quad(&quad));
+        assert!(!is_mirrored_quad(&turned));
+        assert!(is_mirrored_quad(&flipped));
+    }
 
     const TRACKING_NOISE: Synth = Synth {
         noise_px: 1.0,

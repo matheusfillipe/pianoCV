@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use keycore::engine::Engine;
-use keycore::geom::{apply_homography, invert_homography, Point};
+use keycore::geom::{apply_homography, invert_homography, is_mirrored_quad, Point};
 use serde_json::Value;
 
 const MODEL: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../web/public/keynet.onnx");
@@ -49,16 +49,8 @@ fn labelled_backs(label: &Value, width: f64, height: f64) -> Vec<Point> {
         .collect()
 }
 
-/// Whether a quad, back-low, back-high, front-high, front-low, shows its board as a mirror image.
-fn mirrored(quad: &[Point]) -> bool {
-    let [a, b, c, ..] = quad[..] else {
-        return false;
-    };
-    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) < 0.0
-}
-
 /// The labelled corners, given as either points or `[x, y]` pairs.
-fn labelled_corners(label: &Value) -> Vec<Point> {
+fn labelled_corners(label: &Value) -> Option<[Point; 4]> {
     let at = |v: &Value| v.as_f64().unwrap_or(f64::NAN);
     label["corners"]
         .as_array()
@@ -74,7 +66,9 @@ fn labelled_corners(label: &Value) -> Vec<Point> {
                 y: at(&c["y"]),
             },
         })
-        .collect()
+        .collect::<Vec<Point>>()
+        .try_into()
+        .ok()
 }
 
 fn frame_pixels(path: &Path) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
@@ -163,9 +157,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 continue;
             };
             fitted += 1;
-            let corners = labelled_corners(&label);
             end_for_end +=
-                usize::from(corners.len() == 4 && mirrored(&corners) != mirrored(&fit.quad));
+                usize::from(labelled_corners(&label).is_some_and(|corners| {
+                    is_mirrored_quad(&corners) != is_mirrored_quad(&fit.quad)
+                }));
             let case = label["caseColor"].as_str().unwrap_or("unnamed").to_string();
             for back in labelled_backs(&label, width as f64, height as f64) {
                 let straight = fit.lens.straighten(back);

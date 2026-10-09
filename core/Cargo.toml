@@ -24,6 +24,10 @@ required-features = ["native"]
 name = "backedge"
 required-features = ["native"]
 
+[[example]]
+name = "acquire"
+required-features = ["native"]
+
 [profile.release]
 opt-level = 3
 lto = true

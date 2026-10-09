@@ -208,6 +208,12 @@ fn sign(v: f64) -> f64 {
     }
 }
 
+/// Whether a keybed quad, back-low, back-high, front-high, front-low in image coordinates, shows
+/// its board as a mirror image, which no turn of a camera makes.
+pub fn is_mirrored_quad(quad: &[Point; 4]) -> bool {
+    cross(quad[0], quad[1], quad[2]) < 0.0
+}
+
 /// Whether the quad is shaped like a keybed seen by a camera.
 pub fn check_quad(quad: &[Point; 4]) -> bool {
     let signs: Vec<f64> = (0..4)
