@@ -49,6 +49,34 @@ fn labelled_backs(label: &Value, width: f64, height: f64) -> Vec<Point> {
         .collect()
 }
 
+/// Whether a quad, back-low, back-high, front-high, front-low, shows its board as a mirror image.
+fn mirrored(quad: &[Point]) -> bool {
+    let [a, b, c, ..] = quad[..] else {
+        return false;
+    };
+    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) < 0.0
+}
+
+/// The labelled corners, given as either points or `[x, y]` pairs.
+fn labelled_corners(label: &Value) -> Vec<Point> {
+    let at = |v: &Value| v.as_f64().unwrap_or(f64::NAN);
+    label["corners"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|c| match c.as_array() {
+            Some(pair) => Point {
+                x: at(&pair[0]),
+                y: at(&pair[1]),
+            },
+            None => Point {
+                x: at(&c["x"]),
+                y: at(&c["y"]),
+            },
+        })
+        .collect()
+}
+
 fn frame_pixels(path: &Path) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
     let probe = Command::new("ffprobe")
         .args([
@@ -113,7 +141,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             runs.entry(run).or_default().push(path);
         }
     }
-    let (mut frames, mut fitted) = (0, 0);
+    let (mut frames, mut fitted, mut end_for_end) = (0, 0, 0);
     let mut by_case: BTreeMap<String, Vec<f64>> = BTreeMap::new();
     for paths in runs.values_mut() {
         paths.sort();
@@ -135,6 +163,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 continue;
             };
             fitted += 1;
+            let corners = labelled_corners(&label);
+            end_for_end +=
+                usize::from(corners.len() == 4 && mirrored(&corners) != mirrored(&fit.quad));
             let case = label["caseColor"].as_str().unwrap_or("unnamed").to_string();
             for back in labelled_backs(&label, width as f64, height as f64) {
                 let straight = fit.lens.straighten(back);
@@ -152,7 +183,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
-    println!("{} frames, {fitted} fitted", frames);
+    println!("{frames} frames, {fitted} fitted, {end_for_end} end for end");
     report("all", by_case.values().flatten().copied().collect());
     for (case, ahead) in by_case {
         report(&case, ahead);
