@@ -15,6 +15,8 @@ between white keys and the edges of the black keys. A small Rust core, compiled 
 WebAssembly, fits a real keyboard layout to those points and tracks it, so every key is found,
 even the blurry ones far away, and each one gets a note.
 
+![From a camera frame to every key: KeyNet finds the points, a keyboard layout is fitted to them, every key is found](.github/readme/pipeline.png)
+
 The model runs in the browser with [ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/),
 on your GPU through [WebGPU](https://developer.mozilla.org/docs/Web/API/WebGPU_API) when it can.
 It was trained with [PyTorch](https://pytorch.org) on thousands of fake pianos rendered in
