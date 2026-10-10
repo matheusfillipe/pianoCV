@@ -209,7 +209,8 @@ fn sign(v: f64) -> f64 {
 }
 
 /// Whether a keybed quad, back-low, back-high, front-high, front-low in image coordinates, shows
-/// its board as a mirror image, which no turn of a camera makes.
+/// its board as a mirror image. A camera turn keeps a board's handedness, so only a board read
+/// backwards comes out mirrored.
 pub fn is_mirrored_quad(quad: &[Point; 4]) -> bool {
     cross(quad[0], quad[1], quad[2]) < 0.0
 }

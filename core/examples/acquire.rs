@@ -1,29 +1,17 @@
+mod video;
+
 use std::env;
 use std::error::Error;
 use std::io::Read;
-use std::process::{Command, Stdio};
+use std::path::Path;
 
 use keycore::engine::Engine;
 use keycore::geom::is_mirrored_quad;
-
-/// The frame size of a video, or None when it has no readable video stream.
-fn frame_size(video: &str) -> Result<Option<(usize, usize)>, Box<dyn Error>> {
-    let out = Command::new("ffprobe")
-        .args(["-v", "error", "-select_streams", "v:0"])
-        .args(["-show_entries", "stream=width,height", "-of", "csv=p=0"])
-        .arg(video)
-        .output()?;
-    let text = String::from_utf8(out.stdout)?;
-    let mut fields = text.trim().split(',').map(str::parse::<usize>);
-    Ok(match (fields.next(), fields.next()) {
-        (Some(Ok(width)), Some(Ok(height))) => Some((width, height)),
-        _ => None,
-    })
-}
+use video::{decoder, probe};
 
 /// Runs each video through a fresh engine every `restart every` frames, so every video gives many
-/// first acquisitions, and counts the fits read end for end. Real cameras never mirror, so on real
-/// footage every mirrored fit is a board read backwards.
+/// first acquisitions, and counts the fits read end for end. A real camera keeps a board's handedness,
+/// so on real footage every mirrored fit is a board read backwards.
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().skip(1).collect();
     let [model, every, videos @ ..] = &args[..] else {
@@ -32,17 +20,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let every: usize = every.parse()?;
     let (mut all_fitted, mut all_mirrored) = (0, 0);
     for video in videos {
-        let Some((width, height)) = frame_size(video)? else {
-            println!("{video}: no video stream");
-            continue;
+        let (width, height, fps) = match probe(Path::new(video)) {
+            Ok(size) => size,
+            Err(error) => {
+                println!("{video}: {error}");
+                continue;
+            }
         };
-        let mut decoder = Command::new("ffmpeg")
-            .args(["-v", "error", "-noautorotate", "-i"])
-            .arg(video)
-            .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"])
-            .stdout(Stdio::piped())
-            .spawn()?;
-        let mut frames = decoder.stdout.take().ok_or("ffmpeg gave no output")?;
+        let mut input = decoder(Path::new(video))?;
+        let mut frames = input.stdout.take().ok_or("ffmpeg gave no output")?;
         let mut rgba = vec![0u8; width * height * 4];
         let mut engine = Engine::new(model)?;
         let (mut seen, mut fitted, mut mirrored, mut acquisitions, mut backwards) = (0, 0, 0, 0, 0);
@@ -52,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 engine = Engine::new(model)?;
                 was_fitted = false;
             }
-            engine.process(&rgba, width, height, seen as f64 * 33.0)?;
+            engine.process(&rgba, width, height, seen as f64 * 1000.0 / fps)?;
             seen += 1;
             let Some(fit) = engine.fit() else {
                 was_fitted = false;
@@ -67,7 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             was_fitted = true;
         }
-        decoder.wait()?;
+        input.wait()?;
         all_fitted += fitted;
         all_mirrored += mirrored;
         println!(
