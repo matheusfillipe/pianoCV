@@ -74,7 +74,6 @@ import {
 const WIDTH = 640;
 const HEIGHT = 480;
 const PAGE_PARAMS = new URLSearchParams(location.search);
-// ?out= picks which corpus the stills or the motion sequences go to, from ./synth-dirs
 const OUT_PARAM = PAGE_PARAMS.get("out") ?? "";
 const SYNTH_DIR: StillDir = stillDirOf(OUT_PARAM) ?? "synth";
 // ?elevation=min,max and ?azimuth=min,max narrow the sweep, the azimuth as a magnitude either
@@ -754,7 +753,7 @@ export async function boot(): Promise<void> {
   const capture = (
     corners: Point[],
     meta: CaptureMeta,
-    directory: "synth" | "synth-case" | "synth-keys" | "grid",
+    directory: StillDir | "grid",
   ): void => {
     stillCtx.drawImage(canvas, 0, 0);
     const blob = pngBlobFrom(still);

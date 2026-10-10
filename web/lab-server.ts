@@ -2,9 +2,16 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
+import { motionDirs, stillDirs } from "./src/synth-dirs";
 
-const ROUTE =
-  /^\/lab\/save\/(?:(synth|synth-case|synth-keys|synth-motion|synth-test|real-keys-fixed|grid|evaluations)\/)?([^/]+)$/;
+const SAVED_DIRS = [
+  ...stillDirs,
+  ...motionDirs,
+  "real-keys-fixed",
+  "grid",
+  "evaluations",
+];
+const ROUTE = new RegExp(`^/lab/save/(?:(${SAVED_DIRS.join("|")})/)?([^/]+)$`);
 const LIST_ROUTE =
   /^\/lab\/list\/(grid|synth|synth-case|synth-keys|synth-motion|real-keys|real-keys-fixed)$/;
 const DATA_ROUTE =
@@ -12,11 +19,7 @@ const DATA_ROUTE =
 const CLIP_ROUTE = /^\/lab\/clip\/([^/?]+)$/;
 const DIRS: Record<string, string> = {
   recordings: "recordings",
-  synth: "synth",
-  "synth-case": "synth-case",
-  "synth-keys": "synth-keys",
-  "synth-motion": "synth-motion",
-  "synth-test": "synth-test",
+  ...Object.fromEntries([...stillDirs, ...motionDirs].map((dir) => [dir, dir])),
   "real-keys": "real-keys",
   "real-keys-fixed": "real-keys-fixed",
   models: "models",
